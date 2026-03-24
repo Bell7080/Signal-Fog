@@ -1,0 +1,170 @@
+/* ════════════════════════════════════════════
+   css/layout.css  —  헤더 / 레이아웃 / 패널 / 캔버스
+   Signal-Fog  /  팀 LNG
+════════════════════════════════════════════ */
+
+/* ─── HEADER ─────────────────────────────── */
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--col-border);
+  background: rgba(8,12,10,.92);
+  flex-shrink: 0;
+}
+
+.header-title { display: flex; align-items: baseline; gap: 12px; }
+
+.header-title h1 {
+  font-size: 1.35rem;
+  letter-spacing: .22em;
+  color: var(--col-green);
+  text-shadow: 0 0 12px rgba(57,255,142,.55);
+  animation: flicker 8s infinite;
+}
+
+.header-title span { font-size: .65rem; color: var(--col-text-dim); letter-spacing: .1em; }
+
+.header-status {
+  display: flex; gap: 20px; align-items: center;
+  font-size: .68rem; color: var(--col-text-dim); letter-spacing: .05em;
+}
+
+.status-dot {
+  display: inline-block; width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--col-green);
+  box-shadow: 0 0 6px var(--col-green);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.status-dot.amber { background: var(--col-amber); box-shadow: 0 0 6px var(--col-amber); }
+.status-dot.red   { background: var(--col-red);   box-shadow: 0 0 6px var(--col-red); }
+
+/* ─── MAIN LAYOUT (3-column) ─────────────── */
+#main-layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 220px 1fr 240px;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+}
+
+/* ─── PANELS (공통) ──────────────────────── */
+.panel {
+  border: 1px solid var(--col-border);
+  background: rgba(13,20,16,.85);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-title {
+  padding: 6px 12px;
+  font-size: .6rem; letter-spacing: .18em;
+  color: var(--col-green-dim);
+  border-bottom: 1px solid var(--col-border);
+  text-transform: uppercase;
+  background: rgba(30,58,40,.2);
+  flex-shrink: 0;
+}
+
+/* ─── LEFT PANEL — 병사 현황 ─────────────── */
+#panel-left { border-right: none; }
+
+.role-card { padding: 14px 12px; border-bottom: 1px solid var(--col-border); }
+
+.role-badge {
+  display: inline-block; padding: 2px 8px;
+  font-size: .58rem; letter-spacing: .12em;
+  border: 1px solid var(--col-green); color: var(--col-green);
+  margin-bottom: 8px;
+}
+
+.role-name  { font-size: .85rem; color: var(--col-text); letter-spacing: .05em; }
+.role-unit  { font-size: .62rem; color: var(--col-text-dim); margin-top: 3px; font-family: var(--font-kr); }
+
+/* 생존 스탯 바 */
+.stat-block { padding: 12px; border-bottom: 1px solid var(--col-border); }
+.stat-row   { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+
+.stat-label { width: 48px; font-size: .58rem; color: var(--col-text-dim); letter-spacing: .06em; flex-shrink: 0; }
+
+.stat-bar   { flex: 1; height: 5px; background: var(--col-border); border-radius: 0; overflow: hidden; }
+
+.stat-fill {
+  height: 100%; background: var(--col-green);
+  box-shadow: 0 0 4px var(--col-green);
+  transition: width .6s ease;
+}
+.stat-fill.warn { background: var(--col-amber); box-shadow: 0 0 4px var(--col-amber); }
+.stat-fill.crit { background: var(--col-red);   box-shadow: 0 0 4px var(--col-red); }
+
+.stat-val { width: 28px; font-size: .6rem; color: var(--col-text-dim); text-align: right; }
+
+/* 자원 현황 */
+.resource-block { padding: 10px 12px; font-size: .62rem; color: var(--col-text-dim); }
+.resource-row   { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.resource-val   { color: var(--col-green); font-size: .75rem; }
+
+/* ─── CENTER — Phaser 캔버스 컨테이너 ───── */
+#game-canvas-container {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  background: #040604;
+  overflow: hidden;
+}
+
+/* 부팅 화면 */
+#boot-screen {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 18px; z-index: 10;
+  background: #040604;
+}
+
+.boot-logo {
+  font-size: 3.2rem; letter-spacing: .35em;
+  color: var(--col-green);
+  text-shadow: 0 0 30px rgba(57,255,142,.6), 0 0 60px rgba(57,255,142,.2);
+  animation: logoGlow 3s ease-in-out infinite alternate;
+}
+
+.boot-sub     { font-size: .68rem; letter-spacing: .22em; color: var(--col-text-dim); }
+.boot-sub span{ font-family: var(--font-kr); letter-spacing: .05em; }
+
+#boot-log {
+  font-size: .62rem; color: var(--col-green-dim);
+  text-align: left; width: 420px; max-height: 120px;
+  overflow: hidden; line-height: 1.7;
+}
+
+.log-line { opacity: 0; animation: logIn .15s forwards; }
+
+.boot-bar-wrap { width: 420px; height: 3px; background: var(--col-border); }
+
+#boot-bar {
+  height: 100%; width: 0%;
+  background: var(--col-green);
+  box-shadow: 0 0 8px var(--col-green);
+  transition: width .4s ease;
+}
+
+#game-canvas-container canvas { display: block; image-rendering: pixelated; }
+
+/* HUD 오버레이 */
+#hud-overlay {
+  position: absolute; top: 10px; left: 10px; right: 10px;
+  display: flex; justify-content: space-between;
+  pointer-events: none; z-index: 5;
+}
+
+.hud-chip {
+  background: rgba(8,12,10,.8);
+  border: 1px solid var(--col-border);
+  padding: 4px 10px;
+  font-size: .6rem; letter-spacing: .12em; color: var(--col-text-dim);
+}
+
+.hud-chip .val { color: var(--col-green); }

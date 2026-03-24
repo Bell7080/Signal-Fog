@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIGNAL-FOG // 사지방 전술 시뮬레이터</title>
+
+  <!-- ── 폰트 ── -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet" />
+
+  <!-- ── 스타일시트 ── -->
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+
+  <!-- ── CDN ── -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
+</head>
+
+<body>
+<div id="app-wrapper">
+
+  <!-- ── HEADER ── -->
+  <header id="header">
+    <div class="header-title">
+      <h1>SIGNAL-FOG</h1>
+      <span>KCTC 과학화전투 시뮬레이터 // v0.1 ALPHA</span>
+    </div>
+    <div class="header-status">
+      <span><span class="status-dot"></span> FIREBASE</span>
+      <span><span class="status-dot amber"></span> SYNC</span>
+      <span><span class="status-dot red"></span> ROOM</span>
+      <span id="clock" style="color:var(--col-green);letter-spacing:.1em;"></span>
+    </div>
+  </header>
+
+  <!-- ── MAIN LAYOUT ── -->
+  <div id="main-layout">
+
+    <!-- ── LEFT PANEL ── -->
+    <aside class="panel" id="panel-left">
+      <div class="panel-title">▸ 병사 현황</div>
+
+      <div class="role-card">
+        <div class="role-badge">BLUE FORCE</div>
+        <div class="role-name">홍길동 상병</div>
+        <div class="role-unit">3중대 2소대 1분대 — 소총수</div>
+      </div>
+
+      <div class="stat-block">
+        <div class="panel-title" style="border:none;padding:0 0 8px 0;font-size:.55rem;">SURVIVAL STATS</div>
+        <div class="stat-row">
+          <div class="stat-label">피로도</div>
+          <div class="stat-bar"><div class="stat-fill warn" style="width:42%"></div></div>
+          <div class="stat-val">42</div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-label">배고픔</div>
+          <div class="stat-bar"><div class="stat-fill" style="width:78%"></div></div>
+          <div class="stat-val">78</div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-label">수면</div>
+          <div class="stat-bar"><div class="stat-fill crit" style="width:18%"></div></div>
+          <div class="stat-val">18</div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-label">체력</div>
+          <div class="stat-bar"><div class="stat-fill" style="width:91%"></div></div>
+          <div class="stat-val">91</div>
+        </div>
+      </div>
+
+      <div class="resource-block">
+        <div class="resource-row">
+          <span>무전기 배터리</span>
+          <span class="resource-val">73%</span>
+        </div>
+        <div class="resource-row">
+          <span>탄약</span>
+          <span class="resource-val">180 / 210</span>
+        </div>
+        <div class="resource-row">
+          <span>AP (행동력)</span>
+          <span class="resource-val" style="color:var(--col-amber);">2 / 4</span>
+        </div>
+        <div class="resource-row">
+          <span>현재 지형</span>
+          <span class="resource-val" style="color:var(--col-text-dim);">계곡</span>
+        </div>
+        <div class="resource-row" style="color:var(--col-red);font-size:.58rem;margin-top:4px;">
+          ⚠ 통신 음영 구역
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── CENTER (Phaser 캔버스) ── -->
+    <div id="game-canvas-container">
+
+      <!-- 부팅 화면 -->
+      <div id="boot-screen">
+        <div class="boot-logo">SIGNAL<br>FOG</div>
+        <div class="boot-sub">
+          <span>육군창업경진대회 2026 // 팀 LNG</span>
+        </div>
+        <div id="boot-log"></div>
+        <div class="boot-bar-wrap">
+          <div id="boot-bar"></div>
+        </div>
+      </div>
+
+      <!-- HUD 오버레이 (캔버스 위) -->
+      <div id="hud-overlay">
+        <div class="hud-chip">TURN <span class="val" id="hud-turn">01</span></div>
+        <div class="hud-chip">GRID <span class="val" id="hud-coord">E-07</span></div>
+        <div class="hud-chip">PHASE <span class="val">입력</span></div>
+      </div>
+
+    </div>
+
+    <!-- ── RIGHT PANEL ── -->
+    <aside class="panel" id="panel-right">
+      <div class="panel-title">▸ 통신 채널</div>
+
+      <div class="channel-tabs">
+        <div class="ch-tab active" onclick="switchChannel(this,'지휘')">지휘</div>
+        <div class="ch-tab" onclick="switchChannel(this,'소대')">소대</div>
+        <div class="ch-tab" onclick="switchChannel(this,'분대')">분대</div>
+        <div class="ch-tab" onclick="switchChannel(this,'LOG')">LOG</div>
+      </div>
+
+      <div id="chat-log"></div>
+
+      <div id="chat-input-area">
+        <input id="chat-input" type="text" placeholder="무전 내용 입력 / SEND" maxlength="80" />
+        <button id="chat-send" onclick="sendChat()">SEND</button>
+      </div>
+    </aside>
+
+  </div><!-- /main-layout -->
+
+  <!-- ── FOOTER ── -->
+  <footer id="footer">
+    <div class="turn-timer-wrap">
+      <div class="turn-label">TURN INPUT</div>
+      <div id="turn-timer">60</div>
+      <div class="timer-bar-wrap">
+        <div id="timer-bar"></div>
+      </div>
+    </div>
+
+    <div class="footer-status" id="footer-status">
+      대기 중 — 모든 플레이어 입력 완료 시 자동 실행
+    </div>
+
+    <div class="action-buttons">
+      <button class="btn" onclick="holdAction()">HOLD</button>
+      <button class="btn primary" onclick="confirmTurn()">CONFIRM</button>
+      <button class="btn danger" onclick="surrenderAction()">항복</button>
+    </div>
+  </footer>
+
+</div><!-- /app-wrapper -->
+
+<!-- ── 게임 스크립트 (의존 순서 유지) ── -->
+<script src="js/boot.js"></script>
+<script src="js/timer.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/actions.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
