@@ -5,17 +5,42 @@
    TurnManager / HUD 와의 연동을 위해 동일하게 유지.
    ============================================================ */
 
-/* ── 데모 맵 레이아웃 (8×8) ── */
-const DEMO_MAP = [
-  ['OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN'],  // row 0  적 시작
-  ['OPEN',  'FOREST','FOREST','OPEN',  'OPEN',  'HILL',  'HILL',  'OPEN'],  // row 1
-  ['OPEN',  'FOREST','OPEN',  'OPEN',  'OPEN',  'OPEN',  'HILL',  'OPEN'],  // row 2
-  ['VALLEY','VALLEY','VALLEY','VALLEY','VALLEY','VALLEY','VALLEY','VALLEY'],  // row 3  ← 오청 핵심
-  ['OPEN',  'OPEN',  'FOREST','OPEN',  'OPEN',  'FOREST','OPEN',  'OPEN'],  // row 4
-  ['OPEN',  'HILL',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'HILL',  'OPEN'],  // row 5
-  ['OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN'],  // row 6
-  ['OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN',  'OPEN'],  // row 7  아군 시작
-];
+/* ── 랜덤 맵 생성 ──
+   Row 0, 7: 항상 개활지 (스폰)
+   Row 3: 항상 계곡 (오청 핵심)
+   나머지: 랜덤 FOREST/HILL/OPEN
+*/
+function _generateMap() {
+  const rows = CONFIG.GRID_ROWS;
+  const cols = CONFIG.GRID_COLS;
+  const VALLEY_ROW = Math.floor(rows / 2) - 1; // row 3
+  const map = [];
+
+  // 스폰 타일은 반드시 개활지
+  const spawnCols = new Set([1, 3, 6]);          // ally & enemy spawn cols
+
+  for (let r = 0; r < rows; r++) {
+    const row = [];
+    for (let c = 0; c < cols; c++) {
+      let t;
+      if (r === 0 || r === rows - 1) {
+        t = 'OPEN';                               // 스폰 행 — 개활지
+      } else if (r === VALLEY_ROW) {
+        t = 'VALLEY';                             // 계곡 행 — 통신 장애
+      } else if (r === VALLEY_ROW - 1 && spawnCols.has(c)) {
+        t = 'OPEN';                               // 계곡 직전 스폰 코리도 확보
+      } else {
+        const rnd = Math.random();
+        if (rnd < 0.22)      t = 'FOREST';
+        else if (rnd < 0.38) t = 'HILL';
+        else                  t = 'OPEN';
+      }
+      row.push(t);
+    }
+    map.push(row);
+  }
+  return map;
+}
 
 const DEMO_OBJECTIVE = { col: 3, row: 3 }; // D-04 계곡 중앙
 
@@ -94,8 +119,8 @@ class GameScene {
     this.scene3d = new THREE.Scene();
     this.scene3d.fog = new THREE.FogExp2(0x040604, 0.07);
 
-    this.camera  = new THREE.PerspectiveCamera(42, w / h, 0.1, 120);
-    this.camera.position.set(0, 9, 8);
+    this.camera  = new THREE.PerspectiveCamera(42, w / h, 0.1, 150);
+    this.camera.position.set(0, 14, 12);
     this.camera.lookAt(0, 0, 0);
 
     // OrbitControls (로드 실패 시 null — 정적 카메라로 폴백)
@@ -104,8 +129,8 @@ class GameScene {
       this.controls.target.set(0, 0, 0);
       this.controls.enableDamping  = true;
       this.controls.dampingFactor  = 0.08;
-      this.controls.minDistance    = 3;
-      this.controls.maxDistance    = 22;
+      this.controls.minDistance    = 5;
+      this.controls.maxDistance    = 32;
       this.controls.maxPolarAngle  = Math.PI / 2.05;
     } catch (e) {
       console.warn('[Signal-Fog] OrbitControls 초기화 실패 — 정적 카메라 사용:', e.message);
@@ -135,7 +160,7 @@ class GameScene {
     this.enemyAI     = new EnemyAI(new GeminiClient(), new FallbackAI());
     this.turnManager = new TurnManager(this);
 
-    this.gridMap.build(DEMO_MAP);
+    this.gridMap.build(_generateMap());
     this._drawObjective();
     this._initSquads();
   }
@@ -195,8 +220,9 @@ class GameScene {
       ap:      CONFIG.SQUAD_AP_MAX,
       terrain: CONFIG.TERRAIN.OPEN,
       alive:   true,
-      mesh:    null,   // THREE.Group
-      mat:     null,   // 박스 재질 (플래시 효과용)
+      mesh:    null,    // THREE.Group
+      mat:     null,    // 박스 재질 (플래시 효과용)
+      boxMesh: null,    // 정밀 레이캐스팅 전용 박스 메시
     };
   }
 
@@ -206,40 +232,46 @@ class GameScene {
     const color  = isAlly ? 0x39ff8e : 0xff4444;
     const label  = isAlly ? `A${squad.id}` : `E${squad.id - 3}`;
 
-    const group  = new THREE.Group();
+    const group = new THREE.Group();
 
-    // 분대 박스
-    const geo = new THREE.BoxGeometry(0.40, 0.32, 0.40);
+    // 분대 박스 — 레이캐스팅 대상 (squadId 저장)
+    const geo = new THREE.BoxGeometry(0.52, 0.38, 0.52);
     const mat = new THREE.MeshLambertMaterial({
-      color,
-      transparent: true,
-      opacity: 0.90,
+      color, transparent: true, opacity: 0.90,
     });
     const box = new THREE.Mesh(geo, mat);
+    box.userData = { squadId: squad.id };  // ← 정밀 클릭용 ID
     group.add(box);
 
-    // 박스 엣지
+    // 박스 엣지 — 레이캐스팅 비활성화
     const edgeGeo = new THREE.EdgesGeometry(geo);
     const edgeMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 });
-    group.add(new THREE.LineSegments(edgeGeo, edgeMat));
+    const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
+    edgeLines.raycast = () => {};  // ← 엣지선은 클릭 무시
+    group.add(edgeLines);
 
-    // 라벨 스프라이트
+    // 라벨 스프라이트 — 레이캐스팅 비활성화 (카메라 향해 항상 크게 보임)
     const sprite = _makeTextSprite(label, isAlly ? '#39ff8e' : '#ff4444');
-    sprite.position.set(0, 0.42, 0);
-    sprite.scale.set(0.55, 0.30, 1);
+    sprite.position.set(0, 0.52, 0);
+    sprite.scale.set(0.72, 0.42, 1);
+    sprite.raycast = () => {};     // ← 스프라이트는 클릭 무시
     group.add(sprite);
 
     group.position.set(x, y, z);
     group.userData = { squadId: squad.id };
     this.scene3d.add(group);
 
-    squad.mesh = group;
-    squad.mat  = mat;
+    squad.mesh    = group;
+    squad.mat     = mat;
+    squad.boxMesh = box;  // ← 정밀 레이캐스팅 전용
   }
 
   /* ── 분대 선택 ── */
   selectSquad(squad) {
     if (this.phase !== 'INPUT' || !squad.alive) return;
+
+    // 재선택 시 기존 명령 취소 → AP 복원 → 정확한 이동 범위 표시
+    this._cancelCmd(squad);
 
     // 이전 선택 해제 (원래 크기 + 발광 끔)
     if (this.selectedSquad && this.selectedSquad.mesh) {
@@ -528,18 +560,13 @@ class GameScene {
     const mouse = this._toNDC(e);
     this.raycaster.setFromCamera(mouse, this.camera);
 
-    // ① 분대 메시 우선 레이캐스트 (Group 자식 포함)
-    const aliveMeshes = this.squads
-      .filter(s => s.alive && s.mesh)
-      .map(s => s.mesh);
-    const squadHits = this.raycaster.intersectObjects(aliveMeshes, true);
+    // ① 분대 박스 메시만 정밀 레이캐스트 (스프라이트·엣지선 제외, recursive=false)
+    const boxMeshes = this.squads
+      .filter(s => s.alive && s.boxMesh)
+      .map(s => s.boxMesh);
+    const squadHits = this.raycaster.intersectObjects(boxMeshes, false);
     if (squadHits.length > 0) {
-      // 부모 Group의 squadId를 탐색
-      let obj = squadHits[0].object;
-      while (obj && obj.userData.squadId === undefined && obj.parent) {
-        obj = obj.parent;
-      }
-      const squadId = obj && obj.userData.squadId;
+      const { squadId } = squadHits[0].object.userData;
       if (squadId !== undefined) {
         const clicked = this.squads.find(s => s.id === squadId && s.alive);
         if (clicked) {

@@ -13,10 +13,10 @@ class GridMap {
     this._tileMeshes = [];           // 레이캐스팅용 투명 평면
     this._highlights = [];           // 활성 하이라이트 메시
 
-    // 타일 1칸 = 1 Three.js 단위, 그리드 원점 중앙 정렬
-    this.TILE_W   = 1.0;
-    this.OFFSET_X = -(this.cols / 2) + 0.5;
-    this.OFFSET_Z = -(this.rows / 2) + 0.5;
+    // 타일 1칸 = 1.5 Three.js 단위, 그리드 원점 중앙 정렬
+    this.TILE_W   = 1.5;
+    this.OFFSET_X = this.TILE_W * (0.5 - this.cols / 2);
+    this.OFFSET_Z = this.TILE_W * (0.5 - this.rows / 2);
   }
 
   /* ── 전체 타일 생성 ── */
@@ -177,7 +177,7 @@ class GridMap {
     const h    = this._tileHeight(tile.terrain.id);
     return {
       x: col * this.TILE_W + this.OFFSET_X,
-      y: h + 0.18,          // 타일 상면 + 분대 박스 절반 높이
+      y: h + 0.22,          // 타일 상면 + 분대 박스 절반 높이
       z: row * this.TILE_W + this.OFFSET_Z,
     };
   }

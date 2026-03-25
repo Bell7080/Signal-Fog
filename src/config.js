@@ -21,7 +21,7 @@ const CONFIG = {
 
   /* ── 분대 ── */
   SQUAD_COUNT:      3,      // 기본 분대 수 (3~5, 예선은 3 고정)
-  SQUAD_AP_MAX:     4,      // 분대당 턴 행동력 최대치
+  SQUAD_AP_MAX:     3,      // 분대당 턴 행동력 최대치
   SQUAD_TROOP_MAX:  3,      // 분대당 기본 병력 수
 
   /* ── 통신 ── */
@@ -29,7 +29,7 @@ const CONFIG = {
   BATTERY_DRAIN_PER_TURN:  3,  // 턴당 배터리 소모 (%)
 
   /* ── 교전 ── */
-  RIFLE_RANGE:      4,      // 소총 사거리 (타일)
+  RIFLE_RANGE:      3,      // 소총 사거리 (타일)
   RIFLE_HIT_RATE:   0.6,    // 소총 기본 명중률 60%
   FOG_SIGHT_RANGE:  3,      // 시야 범위 (타일)
 
