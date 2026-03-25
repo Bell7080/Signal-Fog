@@ -11,8 +11,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet" />
 
   <!-- ── CDN ── -->
-  <!-- Phaser.js 3.90.0 -->
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+  <!-- Three.js 0.128.0 -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <!-- OrbitControls -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <!-- Howler.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
 
@@ -305,7 +307,7 @@
     .resource-val.crit { color: var(--col-red); }
 
     /* ─────────────────────────────────────────
-       CENTER — Phaser 캔버스 컨테이너
+       CENTER — Three.js 캔버스 컨테이너
     ───────────────────────────────────────── */
     #game-canvas-container {
       position: relative;
@@ -371,10 +373,13 @@
       transition: width .4s ease;
     }
 
-    /* Phaser 캔버스 */
+    /* Three.js 캔버스 */
     #game-canvas-container canvas {
       display: block;
-      image-rendering: pixelated;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100% !important;
+      height: 100% !important;
     }
 
     /* 턴 / 좌표 오버레이 */
@@ -706,7 +711,7 @@
 
     </aside>
 
-    <!-- ── CENTER (Phaser 캔버스) ── -->
+    <!-- ── CENTER (Three.js 3D 맵) ── -->
     <div id="game-canvas-container">
 
       <!-- 부팅 화면 -->
@@ -800,9 +805,9 @@
   ──────────────────────────────── */
   const BOOT_LINES = [
     '> SIGNAL-FOG v0.1 초기화 중...',
-    '> Phaser.js 3.90.0 로드 완료',
+    '> Three.js 0.128.0 로드 완료',
     '> Howler.js 사운드 엔진 활성화',
-    '> 8×8 전술 그리드 모듈 로드 중...',
+    '> 8×8 3D 전술 그리드 모듈 로드 중...',
     '> Gemini AI 클라이언트 준비 중...',
     '> 폴백 AI (랜덤 이동) 모듈 대기',
     '> 통신 오류 시스템 (오청) 초기화',
