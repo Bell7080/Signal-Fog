@@ -1,91 +1,162 @@
 /* ============================================================
    TurnManager.js — 턴 순서 및 페이즈 전환 관리
-   페이즈 흐름: INPUT → EXECUTE_ALLY → EXECUTE_ENEMY → RESULT_CHECK
-
-   구현 순서 (하나씩 추가):
-     1. startInputPhase()     — 명령 입력 페이즈 시작, HUD 갱신
-     2. issueMove()           — 분대 이동 명령 등록
-     3. issueAttack()         — 분대 사격 명령 등록
-     4. confirmInput()        — 입력 확정 → EXECUTE 페이즈 전환
-     5. executeAlly()         — 아군 명령 순차 실행
-     6. executeEnemy()        — EnemyAI 호출 및 적군 행동 실행
-     7. checkResult()         — 승패 판정, 필요 시 ResultScene 전환
-     8. nextTurn()            — 턴 카운터 증가, 다음 INPUT 페이즈 시작
+   페이즈 흐름: INPUT → EXECUTE_ALLY → EXECUTE_ENEMY → CHECK → (next) INPUT
    ============================================================ */
 
 class TurnManager {
 
-  /** @param {Phaser.Scene} scene */
+  /** @param {GameScene} scene */
   constructor(scene) {
-    this.scene    = scene;
-    this.turn     = 1;
-    this.phase    = 'INPUT';   // 'INPUT' | 'EXECUTE_ALLY' | 'EXECUTE_ENEMY' | 'RESULT_CHECK'
-    this.commands = [];        // 이번 턴 입력된 명령 목록
+    this.scene = scene;
+    this.turn  = 1;
   }
 
-  /** 명령 입력 페이즈 시작 */
+  /* ── INPUT 페이즈 시작 ── */
   startInputPhase() {
-    this.phase    = 'INPUT';
-    this.commands = [];
+    this.scene.phase         = 'INPUT';
+    this.scene.selectedSquad = null;
+    this.scene.pendingCmds   = [];
+    this.scene.gridMap.clearHighlights();
+
+    // HUD 갱신
     document.getElementById('hud-turn').textContent  = String(this.turn).padStart(2, '0');
     document.getElementById('hud-phase').textContent = '입력';
     document.getElementById('phase-val').textContent = '명령 입력';
-    // TODO: HUD 타이머 재시작 (hud.startTurnTimer())
+
+    hud.startTurnTimer();
+    hud.setStatus(`턴 ${this.turn} — 각 분대에 이동·사격 명령을 입력하십시오`);
+
+    // 모든 분대 AP 초기화
+    for (const s of this.scene.squads) {
+      if (s.alive) s.ap = CONFIG.SQUAD_AP_MAX;
+    }
+    // 배터리 소모
+    this.scene.comms.drainBattery();
+    this.scene._syncPanel();
   }
 
-  /**
-   * 분대 이동 명령 등록
-   * @param {number} squadId
-   * @param {{ col: number, row: number }} targetTile
-   */
-  issueMove(squadId, targetTile) {
-    this.commands.push({ type: 'move', squadId, targetTile });
-    // TODO: CommsSystem.applyMishear() 통과 후 실제 명령 저장
-  }
-
-  /**
-   * 분대 사격 명령 등록
-   * @param {number} squadId
-   * @param {number} targetId - 공격 대상 적 유닛 ID
-   */
-  issueAttack(squadId, targetId) {
-    this.commands.push({ type: 'attack', squadId, targetId });
-  }
-
-  /** 입력 확정 → 실행 페이즈 진입 */
+  /* ── CONFIRM 진입점 ── */
   async confirmInput() {
-    this.phase = 'EXECUTE_ALLY';
+    if (this.scene.phase !== 'INPUT') return;
+    this.scene.phase = 'EXECUTE';
+    hud.stopTimer();
+
     document.getElementById('hud-phase').textContent = '실행';
     document.getElementById('phase-val').textContent = '실행 중';
-    await this.executeAlly();
-    await this.executeEnemy();
-    this.checkResult();
+    hud.setStatus('실행 페이즈 — 아군 행동 중...');
+
+    await this._executeAlly();
+    await this._wait(400);
+
+    hud.setStatus('실행 페이즈 — 적군 행동 중...');
+    chatUI.addLog('SYSTEM', null, '--- 적군 행동 ---', 'system');
+    await this._executeEnemy();
+    await this._wait(400);
+
+    this._checkResult();
   }
 
-  /** 아군 명령 순차 실행 */
-  async executeAlly() {
-    // TODO: this.commands 순회 → CombatSystem / GridMap 호출
+  /* ── 아군 명령 순차 실행 ── */
+  async _executeAlly() {
+    const cmds = [...this.scene.pendingCmds];
+    this.scene.pendingCmds = [];
+    this.scene.gridMap.clearHighlights();
+
+    if (cmds.length === 0) {
+      chatUI.addLog('SYSTEM', null, '아군 명령 없음 — HOLD', 'system');
+    }
+
+    for (const cmd of cmds) {
+      const squad = this.scene.squads.find(s => s.id === cmd.squadId);
+      if (!squad || !squad.alive) continue;
+
+      if (cmd.type === 'move') {
+        await new Promise(resolve => this.scene.moveSquadTo(squad, cmd.targetPos, resolve));
+        await this._wait(80);
+      } else if (cmd.type === 'attack') {
+        const target = this.scene.squads.find(s => s.id === cmd.targetId);
+        if (target && target.alive) {
+          this.scene.applyHit(squad, target);
+          await this._wait(320);
+        }
+      }
+    }
+    this.scene._syncPanel();
   }
 
-  /** EnemyAI 호출 및 적군 행동 실행 */
-  async executeEnemy() {
-    // TODO: enemyAI.decideTurn(mapState) → 적 이동·공격 실행
+  /* ── 적군 행동 (FallbackAI) ── */
+  async _executeEnemy() {
+    const allySquads  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
+    const enemySquads = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
+
+    if (enemySquads.length === 0) return;
+
+    // FallbackAI 우선 (Gemini는 API 키 설정 후 EnemyAI.decideTurn으로 교체)
+    const actions = this.scene.enemyAI.fallback.decide(enemySquads, allySquads);
+
+    for (const action of actions) {
+      const squad = this.scene.squads.find(s => s.id === action.squadId);
+      if (!squad || !squad.alive) continue;
+
+      if (action.action === 'move') {
+        const targetPos = { col: action.targetCol, row: action.targetRow };
+        if (this.scene.gridMap.isInBounds(targetPos.col, targetPos.row)) {
+          await new Promise(resolve => this.scene.moveSquadTo(squad, targetPos, resolve));
+          await this._wait(100);
+        }
+      } else if (action.action === 'attack') {
+        const targetId = parseInt(action.targetId.replace('ally_', ''));
+        const target   = this.scene.squads.find(s => s.id === targetId);
+        if (target && target.alive) {
+          this.scene.applyHit(squad, target);
+          await this._wait(320);
+        }
+      }
+    }
+    this.scene._syncPanel();
   }
 
-  /** 승패 판정 */
-  checkResult() {
-    // TODO: 전멸, 점령, 턴 제한 도달 여부 확인
-    // 승패 확정 시 this.scene.start('ResultScene', { win, turns: this.turn, ... })
-    if (this.turn >= CONFIG.TURN_LIMIT) {
-      // 턴 제한 도달 → 점령 지점 수 비교
+  /* ── 승패 판정 ── */
+  _checkResult() {
+    const allyAlive  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
+    const enemyAlive = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
+
+    if (allyAlive.length === 0) {
+      hud.setStatus('⚠ 패배 — 아군 전멸');
+      chatUI.addLog('SYSTEM', null, '⚠ 아군 전멸 — 훈련 종료 (패배)', 'system');
+      document.getElementById('hud-phase').textContent = '종료';
       return;
     }
-    this.nextTurn();
+    if (enemyAlive.length === 0) {
+      hud.setStatus('승리 — 적군 전멸!');
+      chatUI.addLog('SYSTEM', null, '적군 전멸 — 훈련 종료 (승리)', 'system');
+      document.getElementById('hud-phase').textContent = '종료';
+      return;
+    }
+    if (this.turn >= CONFIG.TURN_LIMIT) {
+      hud.setStatus(`턴 제한 도달 (${CONFIG.TURN_LIMIT}턴) — 훈련 종료`);
+      chatUI.addLog('SYSTEM', null, `${CONFIG.TURN_LIMIT}턴 경과 — 훈련 종료`, 'system');
+      document.getElementById('hud-phase').textContent = '종료';
+      return;
+    }
+
+    // 목표 지점 점령 확인
+    const obj = DEMO_OBJECTIVE;
+    const onObj = allyAlive.find(s => s.pos.col === obj.col && s.pos.row === obj.row);
+    if (onObj) {
+      chatUI.addLog('SYSTEM', null,
+        `A${onObj.id}분대 목표 지점(D-04) 점령 중 — ${CONFIG.CAPTURE_HOLD_TURNS}턴 유지 시 승리`, 'system');
+    }
+
+    this._nextTurn();
   }
 
-  /** 다음 턴으로 */
-  nextTurn() {
+  _nextTurn() {
     this.turn++;
     this.startInputPhase();
+  }
+
+  _wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
