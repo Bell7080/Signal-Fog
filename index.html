@@ -13,10 +13,6 @@
   <!-- ── CDN ── -->
   <!-- Phaser.js 3.90.0 -->
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
-  <!-- Firebase App + Realtime DB (compat) -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <!-- Howler.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
 
@@ -179,58 +175,96 @@
     }
 
     /* ─────────────────────────────────────────
-       LEFT PANEL — 플레이어 / 역할 / 스탯
+       LEFT PANEL — 분대 현황
     ───────────────────────────────────────── */
     #panel-left {
       border-right: none;
     }
 
-    .role-card {
-      padding: 14px 12px;
-      border-bottom: 1px solid var(--col-border);
+    /* 분대 카드 */
+    .squad-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
 
-    .role-badge {
-      display: inline-block;
-      padding: 2px 8px;
-      font-size: .58rem;
+    .squad-card {
+      border: 1px solid var(--col-border);
+      padding: 10px 10px 8px;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      background: rgba(13,20,16,.5);
+    }
+
+    .squad-card:hover {
+      border-color: var(--col-green-dim);
+      background: rgba(30,58,40,.15);
+    }
+
+    .squad-card.active {
+      border-color: var(--col-green);
+      background: rgba(57,255,142,.04);
+    }
+
+    .squad-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 7px;
+    }
+
+    .squad-badge {
+      font-size: .6rem;
       letter-spacing: .12em;
-      border: 1px solid var(--col-green);
       color: var(--col-green);
-      margin-bottom: 8px;
+      border: 1px solid var(--col-green);
+      padding: 1px 6px;
     }
 
-    .role-name {
-      font-size: .85rem;
-      color: var(--col-text);
-      letter-spacing: .05em;
+    .squad-card.inactive .squad-badge {
+      color: var(--col-text-dim);
+      border-color: var(--col-border);
     }
 
-    .role-unit {
+    .squad-status-tag {
+      font-size: .55rem;
+      letter-spacing: .08em;
+      color: var(--col-text-dim);
+    }
+
+    .squad-status-tag.moving  { color: var(--col-amber); }
+    .squad-status-tag.combat  { color: var(--col-red); }
+    .squad-status-tag.nocomms { color: var(--col-red); animation: pulse 1s infinite; }
+
+    .squad-troops {
       font-size: .62rem;
       color: var(--col-text-dim);
-      margin-top: 3px;
-      font-family: var(--font-kr);
+      margin-bottom: 6px;
     }
 
-    /* 생존 스탯 바 */
-    .stat-block { padding: 12px; border-bottom: 1px solid var(--col-border); }
+    .squad-troops span { color: var(--col-text); }
 
-    .stat-row {
-      display: flex; align-items: center;
-      gap: 8px; margin-bottom: 9px;
+    /* 통신 품질 바 */
+    .comms-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .stat-label {
-      width: 48px; font-size: .58rem;
-      color: var(--col-text-dim); letter-spacing: .06em;
+    .comms-label {
+      font-size: .55rem;
+      color: var(--col-text-dim);
+      letter-spacing: .06em;
+      width: 24px;
       flex-shrink: 0;
     }
 
     .stat-bar {
-      flex: 1; height: 5px;
+      flex: 1; height: 4px;
       background: var(--col-border);
-      border-radius: 0;
       overflow: hidden;
     }
 
@@ -244,27 +278,31 @@
     .stat-fill.warn { background: var(--col-amber); box-shadow: 0 0 4px var(--col-amber); }
     .stat-fill.crit { background: var(--col-red);   box-shadow: 0 0 4px var(--col-red); }
 
-    .stat-val {
-      width: 28px; font-size: .6rem;
-      color: var(--col-text-dim); text-align: right;
+    .comms-val {
+      font-size: .55rem;
+      color: var(--col-text-dim);
+      width: 28px;
+      text-align: right;
     }
 
-    /* 배터리 & AP */
-    .resource-block {
+    /* AP & 공용 자원 */
+    .commander-block {
       padding: 10px 12px;
-      font-size: .62rem;
-      color: var(--col-text-dim);
+      border-top: 1px solid var(--col-border);
+      flex-shrink: 0;
     }
 
     .resource-row {
-      display: flex; justify-content: space-between;
-      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      font-size: .6rem;
+      color: var(--col-text-dim);
+      margin-bottom: 5px;
     }
 
-    .resource-val {
-      color: var(--col-green);
-      font-size: .75rem;
-    }
+    .resource-val { color: var(--col-green); font-size: .72rem; }
+    .resource-val.warn { color: var(--col-amber); }
+    .resource-val.crit { color: var(--col-red); }
 
     /* ─────────────────────────────────────────
        CENTER — Phaser 캔버스 컨테이너
@@ -591,9 +629,8 @@
       <span>KCTC 과학화전투 시뮬레이터 // v0.1 ALPHA</span>
     </div>
     <div class="header-status">
-      <span><span class="status-dot"></span> FIREBASE</span>
-      <span><span class="status-dot amber"></span> SYNC</span>
-      <span><span class="status-dot red"></span> ROOM</span>
+      <span><span class="status-dot" id="dot-comms"></span> COMMS</span>
+      <span><span class="status-dot amber" id="dot-ai"></span> GEMINI AI</span>
       <span id="clock" style="color:var(--col-green);letter-spacing:.1em;"></span>
     </div>
   </header>
@@ -601,61 +638,72 @@
   <!-- ── MAIN LAYOUT ── -->
   <div id="main-layout">
 
-    <!-- ── LEFT PANEL ── -->
+    <!-- ── LEFT PANEL — 분대 현황 ── -->
     <aside class="panel" id="panel-left">
-      <div class="panel-title">▸ 병사 현황</div>
+      <div class="panel-title">▸ 분대 현황</div>
 
-      <div class="role-card">
-        <div class="role-badge">BLUE FORCE</div>
-        <div class="role-name">홍길동 상병</div>
-        <div class="role-unit">3중대 2소대 1분대 — 소총수</div>
-      </div>
+      <div class="squad-list" id="squad-list">
 
-      <div class="stat-block">
-        <div class="panel-title" style="border:none;padding:0 0 8px 0;font-size:.55rem;">SURVIVAL STATS</div>
-        <div class="stat-row">
-          <div class="stat-label">피로도</div>
-          <div class="stat-bar"><div class="stat-fill warn" style="width:42%"></div></div>
-          <div class="stat-val">42</div>
+        <!-- 1분대 -->
+        <div class="squad-card active" onclick="selectSquad(this, 1)">
+          <div class="squad-card-header">
+            <span class="squad-badge">1분대</span>
+            <span class="squad-status-tag">대기</span>
+          </div>
+          <div class="squad-troops">병력 <span>3 / 3</span> &nbsp;|&nbsp; AP <span>4 / 4</span></div>
+          <div class="comms-row">
+            <span class="comms-label">통신</span>
+            <div class="stat-bar"><div class="stat-fill" style="width:85%"></div></div>
+            <span class="comms-val">85%</span>
+          </div>
         </div>
-        <div class="stat-row">
-          <div class="stat-label">배고픔</div>
-          <div class="stat-bar"><div class="stat-fill" style="width:78%"></div></div>
-          <div class="stat-val">78</div>
-        </div>
-        <div class="stat-row">
-          <div class="stat-label">수면</div>
-          <div class="stat-bar"><div class="stat-fill crit" style="width:18%"></div></div>
-          <div class="stat-val">18</div>
-        </div>
-        <div class="stat-row">
-          <div class="stat-label">체력</div>
-          <div class="stat-bar"><div class="stat-fill" style="width:91%"></div></div>
-          <div class="stat-val">91</div>
-        </div>
-      </div>
 
-      <div class="resource-block">
+        <!-- 2분대 -->
+        <div class="squad-card" onclick="selectSquad(this, 2)">
+          <div class="squad-card-header">
+            <span class="squad-badge">2분대</span>
+            <span class="squad-status-tag moving">이동 중</span>
+          </div>
+          <div class="squad-troops">병력 <span>3 / 3</span> &nbsp;|&nbsp; AP <span>2 / 4</span></div>
+          <div class="comms-row">
+            <span class="comms-label">통신</span>
+            <div class="stat-bar"><div class="stat-fill warn" style="width:52%"></div></div>
+            <span class="comms-val">52%</span>
+          </div>
+        </div>
+
+        <!-- 3분대 -->
+        <div class="squad-card" onclick="selectSquad(this, 3)">
+          <div class="squad-card-header">
+            <span class="squad-badge">3분대</span>
+            <span class="squad-status-tag combat">교전 중</span>
+          </div>
+          <div class="squad-troops">병력 <span>2 / 3</span> &nbsp;|&nbsp; AP <span>1 / 4</span></div>
+          <div class="comms-row">
+            <span class="comms-label">통신</span>
+            <div class="stat-bar"><div class="stat-fill crit" style="width:28%"></div></div>
+            <span class="comms-val">28%</span>
+          </div>
+        </div>
+
+      </div><!-- /squad-list -->
+
+      <!-- 대대장 공용 자원 -->
+      <div class="commander-block">
+        <div class="panel-title" style="border:none;padding:0 0 7px 0;font-size:.55rem;">COMMANDER</div>
         <div class="resource-row">
           <span>무전기 배터리</span>
-          <span class="resource-val">73%</span>
+          <span class="resource-val warn">58%</span>
         </div>
         <div class="resource-row">
-          <span>탄약</span>
-          <span class="resource-val">180 / 210</span>
+          <span>현재 페이즈</span>
+          <span class="resource-val" id="phase-val">명령 입력</span>
         </div>
-        <div class="resource-row">
-          <span>AP (행동력)</span>
-          <span class="resource-val" style="color:var(--col-amber);">2 / 4</span>
-        </div>
-        <div class="resource-row">
-          <span>현재 지형</span>
-          <span class="resource-val" style="color:var(--col-text-dim);">계곡</span>
-        </div>
-        <div class="resource-row" style="color:var(--col-red);font-size:.58rem;margin-top:4px;">
+        <div class="resource-row" id="terrain-row" style="color:var(--col-red);font-size:.57rem;margin-top:2px;display:none;">
           ⚠ 통신 음영 구역
         </div>
       </div>
+
     </aside>
 
     <!-- ── CENTER (Phaser 캔버스) ── -->
@@ -676,8 +724,8 @@
       <!-- HUD 오버레이 (캔버스 위) -->
       <div id="hud-overlay">
         <div class="hud-chip">TURN <span class="val" id="hud-turn">01</span></div>
-        <div class="hud-chip">GRID <span class="val" id="hud-coord">E-07</span></div>
-        <div class="hud-chip">PHASE <span class="val">입력</span></div>
+        <div class="hud-chip">GRID <span class="val" id="hud-coord">D-04</span></div>
+        <div class="hud-chip">PHASE <span class="val" id="hud-phase">입력</span></div>
       </div>
 
     </div>
@@ -693,9 +741,7 @@
         <div class="ch-tab" onclick="switchChannel(this,'LOG')">LOG</div>
       </div>
 
-      <div id="chat-log">
-        <!-- 예시 로그 (JS에서 동적 생성) -->
-      </div>
+      <div id="chat-log"></div>
 
       <div id="chat-input-area">
         <input id="chat-input" type="text" placeholder="무전 내용 입력 / SEND" maxlength="80" />
@@ -716,7 +762,7 @@
     </div>
 
     <div class="footer-status" id="footer-status">
-      대기 중 — 모든 플레이어 입력 완료 시 자동 실행
+      대기 중 — 분대 명령 입력 후 CONFIRM
     </div>
 
     <div class="action-buttons">
@@ -728,35 +774,57 @@
 
 </div><!-- /app-wrapper -->
 
-<!-- ── 게임 스크립트 ── -->
+<!-- ── 게임 소스 로드 (의존성 순서) ── -->
+<script src="src/config.js"></script>
+<script src="src/ui/ChatUI.js"></script>
+<script src="src/ui/HUD.js"></script>
+<script src="src/ui/MiniMap.js"></script>
+<script src="src/systems/GridMap.js"></script>
+<script src="src/systems/TurnManager.js"></script>
+<script src="src/systems/CommsSystem.js"></script>
+<script src="src/systems/CombatSystem.js"></script>
+<script src="src/systems/FogOfWar.js"></script>
+<script src="src/systems/SurvivalStats.js"></script>
+<script src="src/ai/GeminiClient.js"></script>
+<script src="src/ai/EnemyAI.js"></script>
+<script src="src/ai/FallbackAI.js"></script>
+<script src="src/scenes/BootScene.js"></script>
+<script src="src/scenes/GameScene.js"></script>
+<script src="src/scenes/ResultScene.js"></script>
+<script src="src/main.js"></script>
+
 <script>
   /* ────────────────────────────────
-     BOOT SEQUENCE
+     BOOT SEQUENCE (HTML DOM 기반)
+     Phaser 로드 전 부팅 애니메이션
   ──────────────────────────────── */
   const BOOT_LINES = [
     '> SIGNAL-FOG v0.1 초기화 중...',
     '> Phaser.js 3.90.0 로드 완료',
-    '> Firebase SDK 연결 대기...',
     '> Howler.js 사운드 엔진 활성화',
-    '> 헥스 그리드 모듈 로드 중...',
-    '> TensorFlow.js 봇 엔진 준비',
-    '> Firebase Realtime DB 연결...',
+    '> 8×8 전술 그리드 모듈 로드 중...',
+    '> Gemini AI 클라이언트 준비 중...',
+    '> 폴백 AI (랜덤 이동) 모듈 대기',
+    '> 통신 오류 시스템 (오청) 초기화',
+    '> 포그 오브 워 시야 계산 준비',
     '> 사지방 네트워크 환경 감지',
-    '> 로비 씬 진입 준비 완료',
     '> 전술 시뮬레이터 시작',
   ];
 
   let bootIdx = 0;
-  const bootLog  = document.getElementById('boot-log');
-  const bootBar  = document.getElementById('boot-bar');
-  const bootScr  = document.getElementById('boot-screen');
+  const bootLog = document.getElementById('boot-log');
+  const bootBar = document.getElementById('boot-bar');
+  const bootScr = document.getElementById('boot-screen');
 
   function bootStep() {
     if (bootIdx >= BOOT_LINES.length) {
       setTimeout(() => {
         bootScr.style.transition = 'opacity .6s';
         bootScr.style.opacity = '0';
-        setTimeout(() => { bootScr.style.display = 'none'; initGame(); }, 650);
+        setTimeout(() => {
+          bootScr.style.display = 'none';
+          if (typeof initGame === 'function') initGame();
+        }, 650);
       }, 400);
       return;
     }
@@ -787,143 +855,12 @@
   setInterval(updateClock, 1000);
 
   /* ────────────────────────────────
-     TURN TIMER
+     LEFT PANEL — 분대 선택
   ──────────────────────────────── */
-  const TURN_SEC = 60;
-  let turnRemain = TURN_SEC;
-  let timerInterval = null;
-
-  function startTurnTimer() {
-    clearInterval(timerInterval);
-    turnRemain = TURN_SEC;
-    updateTimerUI();
-    timerInterval = setInterval(() => {
-      turnRemain--;
-      updateTimerUI();
-      if (turnRemain <= 0) { clearInterval(timerInterval); autoConfirm(); }
-    }, 1000);
-  }
-
-  function updateTimerUI() {
-    const el  = document.getElementById('turn-timer');
-    const bar = document.getElementById('timer-bar');
-    el.textContent = turnRemain;
-    bar.style.width = (turnRemain / TURN_SEC * 100) + '%';
-    el.className = '';
-    if (turnRemain <= 10) {
-      el.classList.add('crit');
-      bar.style.background = 'var(--col-red)';
-    } else if (turnRemain <= 20) {
-      el.classList.add('warn');
-      bar.style.background = 'var(--col-amber)';
-    } else {
-      bar.style.background = 'var(--col-green)';
-    }
-  }
-
-  function autoConfirm() {
-    setStatus('⚠ 시간 초과 — 자동 HOLD 처리됨');
-    addLog('SYSTEM', null, '입력 시간 초과 → 자동 대기(HOLD) 처리', 'system');
-  }
-
-  /* ────────────────────────────────
-     CHAT / LOG
-  ──────────────────────────────── */
-  const chatLog = document.getElementById('chat-log');
-
-  function addLog(sender, time, text, type = '') {
-    const t  = time || new Date().toTimeString().slice(0,5);
-    const el = document.createElement('div');
-    el.className = 'log-entry';
-    if (type === 'system') {
-      el.innerHTML = `<span class="log-time">[${t}]</span><span class="log-system">${text}</span>`;
-    } else if (type === 'distort') {
-      el.innerHTML = `<span class="log-time">[${t}]</span><span class="log-sender">${sender}</span><span class="log-distort" data-raw="${text}">${text}</span>`;
-    } else {
-      el.innerHTML = `<span class="log-time">[${t}]</span><span class="log-sender">${sender}</span><span class="log-text">${text}</span>`;
-    }
-    el.style.animationDelay = '0s';
-    chatLog.appendChild(el);
-    chatLog.scrollTop = chatLog.scrollHeight;
-  }
-
-  function sendChat() {
-    const input = document.getElementById('chat-input');
-    const text  = input.value.trim();
-    if (!text) return;
-    addLog('나 >', null, text);
-    input.value = '';
-  }
-
-  document.getElementById('chat-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter') sendChat();
-  });
-
-  function switchChannel(tab, name) {
-    document.querySelectorAll('.ch-tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    addLog('SYSTEM', null, `채널 전환 → [${name}]`, 'system');
-  }
-
-  /* ────────────────────────────────
-     FOOTER ACTIONS
-  ──────────────────────────────── */
-  function setStatus(msg) {
-    document.getElementById('footer-status').textContent = msg;
-  }
-
-  function holdAction()      { addLog('SYSTEM', null, '행동 → HOLD (대기)', 'system'); setStatus('HOLD 선택됨 — 턴 종료 대기'); }
-  function confirmTurn()     { addLog('SYSTEM', null, '입력 확정 — 실행 대기 중', 'system'); setStatus('입력 확정 완료'); clearInterval(timerInterval); }
-  function surrenderAction() { addLog('SYSTEM', null, '⚠ 항복 신호 송신됨', 'system'); setStatus('항복 처리 중...'); }
-
-  /* ────────────────────────────────
-     PHASER INIT (부팅 후 호출)
-  ──────────────────────────────── */
-  function initGame() {
-    /* TODO: Firebase 초기화
-    firebase.initializeApp({ ... });
-    */
-
-    const config = {
-      type: Phaser.AUTO,
-      parent: 'game-canvas-container',
-      backgroundColor: '#040604',
-      scale: {
-        mode: Phaser.Scale.RESIZE,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
-      },
-      scene: {
-        create() {
-          // ── 임시 플레이스홀더 ──
-          const { width, height } = this.scale;
-          this.add.text(width / 2, height / 2,
-            '[ HEX MAP LOADING... ]\n20×20 헥스 그리드 초기화 대기',
-            {
-              fontFamily: "'Share Tech Mono', monospace",
-              fontSize: '14px',
-              color: '#1e6644',
-              align: 'center',
-            }
-          ).setOrigin(0.5);
-
-          // 좌표 업데이트 (마우스 추적 예시)
-          this.input.on('pointermove', (ptr) => {
-            const gx = String.fromCharCode(65 + Math.floor(ptr.x / 40));
-            const gy = String(Math.floor(ptr.y / 40) + 1).padStart(2,'0');
-            document.getElementById('hud-coord').textContent = `${gx}-${gy}`;
-          });
-        }
-      }
-    };
-
-    window.phaserGame = new Phaser.Game(config);
-
-    // 부팅 완료 로그 & 타이머 시작
-    addLog('SYSTEM', null, 'Signal-Fog 초기화 완료 — 로비 대기 중', 'system');
-    addLog('OC/T',   null, '훈련 시작 준비. 역할 배정 후 입장하십시오.', '');
-    addLog('대항군', null, '███ ████ ██ ████████...', 'distort');  // 통신 오류 예시
-    startTurnTimer();
-    setStatus('로비 — 역할 배정 대기 중');
+  function selectSquad(card, squadId) {
+    document.querySelectorAll('.squad-card').forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+    chatUI.addLog('SYSTEM', null, `${squadId}분대 선택`, 'system');
   }
 </script>
 </body>
