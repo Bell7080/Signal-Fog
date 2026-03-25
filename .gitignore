@@ -1,0 +1,17 @@
+# ── 보안: API 키 파일 ──────────────────────────────────────────
+# config.secret.js 에 Gemini API 키를 넣고 절대 커밋하지 않는다.
+# 템플릿: src/config.secret.example.js
+src/config.secret.js
+*.env
+.env.*
+
+# ── Node / 빌드 산출물 ──────────────────────────────────────────
+node_modules/
+dist/
+.cache/
+
+# ── OS / IDE ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+.idea/

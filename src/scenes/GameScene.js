@@ -5,35 +5,30 @@
    TurnManager / HUD 와의 연동을 위해 동일하게 유지.
    ============================================================ */
 
-/* ── 랜덤 맵 생성 ──
-   Row 0, 7: 항상 개활지 (스폰)
-   Row 3: 항상 계곡 (오청 핵심)
-   나머지: 랜덤 FOREST/HILL/OPEN
+/* ── 랜덤 맵 생성 (12×16 소대급 전투 지형) ──
+   Row 0~1       : 항상 개활지 (적군 스폰 버퍼)
+   Row 14~15     : 항상 개활지 (아군 스폰 버퍼)
+   Row 7, 8      : 항상 계곡 — 중앙 통신 음영 지대 (2행)
+   Row 2~6, 9~13 : 랜덤 FOREST/HILL/OPEN
 */
 function _generateMap() {
-  const rows = CONFIG.GRID_ROWS;
-  const cols = CONFIG.GRID_COLS;
-  const VALLEY_ROW = Math.floor(rows / 2) - 1; // row 3
-  const map = [];
-
-  // 스폰 타일은 반드시 개활지
-  const spawnCols = new Set([1, 3, 6]);          // ally & enemy spawn cols
+  const rows = CONFIG.GRID_ROWS;  // 16
+  const cols = CONFIG.GRID_COLS;  // 12
+  const map  = [];
 
   for (let r = 0; r < rows; r++) {
     const row = [];
     for (let c = 0; c < cols; c++) {
       let t;
-      if (r === 0 || r === rows - 1) {
-        t = 'OPEN';                               // 스폰 행 — 개활지
-      } else if (r === VALLEY_ROW) {
-        t = 'VALLEY';                             // 계곡 행 — 통신 장애
-      } else if (r === VALLEY_ROW - 1 && spawnCols.has(c)) {
-        t = 'OPEN';                               // 계곡 직전 스폰 코리도 확보
+      if (r <= 1 || r >= rows - 2) {
+        t = 'OPEN';                               // 스폰 버퍼 — 2행
+      } else if (r === 7 || r === 8) {
+        t = 'VALLEY';                             // 중앙 계곡 2행 — 통신 장애
       } else {
         const rnd = Math.random();
-        if (rnd < 0.22)      t = 'FOREST';
-        else if (rnd < 0.38) t = 'HILL';
-        else                  t = 'OPEN';
+        if (rnd < 0.25)      t = 'FOREST';       // 수풀 25%
+        else if (rnd < 0.42) t = 'HILL';         // 고지 17%
+        else                  t = 'OPEN';         // 개활지 58%
       }
       row.push(t);
     }
@@ -42,10 +37,12 @@ function _generateMap() {
   return map;
 }
 
-const DEMO_OBJECTIVE = { col: 3, row: 3 }; // D-04 계곡 중앙
+// G-08: 계곡 중앙 목표지점 (col=6 → 'G', row=7 → '08')
+const DEMO_OBJECTIVE = { col: 6, row: 7 };
 
-const ALLY_SPAWN  = [{ id:1, col:1, row:7 }, { id:2, col:3, row:7 }, { id:3, col:6, row:7 }];
-const ENEMY_SPAWN = [{ id:4, col:1, row:0 }, { id:5, col:4, row:0 }, { id:6, col:6, row:0 }];
+// 아군: 맨 아래(row=15), 적: 맨 위(row=0) — cols 2·6·10으로 균등 분산
+const ALLY_SPAWN  = [{ id:1, col:2, row:15 }, { id:2, col:6, row:15 }, { id:3, col:10, row:15 }];
+const ENEMY_SPAWN = [{ id:4, col:2, row:0  }, { id:5, col:6, row:0  }, { id:6, col:10, row:0  }];
 
 /* ============================================================ */
 
@@ -98,7 +95,7 @@ class GameScene {
 
     // 첫 턴 시작
     this.turnManager.startInputPhase();
-    chatUI.addLog('OC/T',   null, '훈련 개시. 목표: 계곡 중앙 점령 (D-04). 분대를 선택하고 이동 타일을 클릭하십시오.');
+    chatUI.addLog('OC/T',   null, '훈련 개시. 목표: 계곡 중앙 점령 (G-08). 분대를 선택하고 이동 타일을 클릭하십시오.');
     chatUI.addLog('SYSTEM', null, '좌측 패널 또는 맵 클릭으로 분대 선택. CONFIRM으로 턴 실행.', 'system');
 
     this._tick();
@@ -122,10 +119,10 @@ class GameScene {
     const h = this.container.clientHeight || 512;
 
     this.scene3d = new THREE.Scene();
-    this.scene3d.fog = new THREE.FogExp2(0x040604, 0.07);
+    this.scene3d.fog = new THREE.FogExp2(0x040604, 0.03);  // 넓은 맵 → 안개 얇게
 
-    this.camera  = new THREE.PerspectiveCamera(42, w / h, 0.1, 150);
-    this.camera.position.set(0, 14, 12);
+    this.camera  = new THREE.PerspectiveCamera(48, w / h, 0.1, 200);
+    this.camera.position.set(0, 26, 24);
     this.camera.lookAt(0, 0, 0);
 
     // OrbitControls (로드 실패 시 null — 정적 카메라로 폴백)
@@ -135,7 +132,7 @@ class GameScene {
       this.controls.enableDamping  = true;
       this.controls.dampingFactor  = 0.08;
       this.controls.minDistance    = 5;
-      this.controls.maxDistance    = 32;
+      this.controls.maxDistance    = 60;
       this.controls.maxPolarAngle  = Math.PI / 2.05;
     } catch (e) {
       console.warn('[Signal-Fog] OrbitControls 초기화 실패 — 정적 카메라 사용:', e.message);
@@ -146,12 +143,12 @@ class GameScene {
     const ambient = new THREE.AmbientLight(0x0a2010, 1.2);
     this.scene3d.add(ambient);
 
-    const pLight = new THREE.PointLight(0x39ff8e, 1.4, 25);
-    pLight.position.set(0, 10, 0);
+    const pLight = new THREE.PointLight(0x39ff8e, 1.4, 60);
+    pLight.position.set(0, 12, 0);
     this.scene3d.add(pLight);
 
-    const pLight2 = new THREE.PointLight(0x2277cc, 0.5, 20);
-    pLight2.position.set(-5, 6, 5);
+    const pLight2 = new THREE.PointLight(0x2277cc, 0.5, 45);
+    pLight2.position.set(-7, 8, 7);
     this.scene3d.add(pLight2);
 
     this.raycaster = new THREE.Raycaster();

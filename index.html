@@ -634,6 +634,7 @@
     }
     #result-overlay.show { display: flex; }
 
+
     #result-panel {
       border: 1px solid var(--col-green);
       box-shadow: 0 0 40px rgba(57,255,142,.18), inset 0 0 20px rgba(57,255,142,.04);
@@ -850,6 +851,8 @@
 
 <!-- ── 게임 소스 로드 (의존성 순서) ── -->
 <script src="src/config.js"></script>
+<!-- config.secret.js 는 .gitignore 등록 파일 — 없어도 오류 없음 -->
+<script src="src/config.secret.js" onerror="void 0"></script>
 <script src="src/ui/ChatUI.js"></script>
 <script src="src/ui/HUD.js"></script>
 <script src="src/ui/MiniMap.js"></script>

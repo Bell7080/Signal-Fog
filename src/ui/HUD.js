@@ -105,3 +105,4 @@ class HUD {
 function holdAction()      { hud.holdAction(); }
 function confirmTurn()     { hud.confirmTurn(); }
 function surrenderAction() { hud.surrenderAction(); }
+
