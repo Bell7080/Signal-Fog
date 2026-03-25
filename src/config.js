@@ -43,6 +43,9 @@ const CONFIG = {
   /* ── AI ── */
   GEMINI_MODEL:   'gemini-2.0-flash',
   GEMINI_TIMEOUT: 3000,     // ms — 초과 시 FallbackAI 전환
-  GEMINI_API_KEY: '',       // TODO: Google AI Studio에서 발급 후 입력
+  /* ⚠ 보안 주의: API 키를 여기에 직접 입력하지 마십시오!
+     키는 게임 내 'AI 설정' 버튼을 통해 입력하면 브라우저 localStorage에만 저장됩니다.
+     이 필드는 빈 문자열('')로 유지하고 절대 커밋하지 마십시오. */
+  GEMINI_API_KEY: '',
 
 };

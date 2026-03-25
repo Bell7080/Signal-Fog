@@ -7,7 +7,8 @@
 class GeminiClient {
 
   constructor() {
-    this.apiKey  = CONFIG.GEMINI_API_KEY;
+    // 우선순위: localStorage(사용자 입력) > CONFIG(개발 환경 하드코딩 금지)
+    this.apiKey  = localStorage.getItem('signal_fog_gemini_key') || CONFIG.GEMINI_API_KEY || '';
     this.model   = CONFIG.GEMINI_MODEL;
     this.baseURL = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
   }

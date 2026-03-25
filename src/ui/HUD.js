@@ -105,3 +105,64 @@ class HUD {
 function holdAction()      { hud.holdAction(); }
 function confirmTurn()     { hud.confirmTurn(); }
 function surrenderAction() { hud.surrenderAction(); }
+
+/* ── Gemini API 키 모달 ──────────────────────────────────────────
+   키는 브라우저 localStorage('signal_fog_gemini_key')에만 저장.
+   소스코드·config.js·서버 어디에도 기록하지 않는다.
+   ────────────────────────────────────────────────────────────── */
+const _LSKEY = 'signal_fog_gemini_key';
+
+function openApiKeyModal() {
+  const modal = document.getElementById('api-key-modal');
+  const input = document.getElementById('api-key-input');
+  const st    = document.getElementById('api-key-status');
+  if (!modal) return;
+
+  // 저장된 키 로드 (마스킹된 미리보기)
+  const saved = localStorage.getItem(_LSKEY) || '';
+  input.value = saved;
+  st.textContent = saved
+    ? `✔ 저장된 키: ${saved.slice(0,8)}…`
+    : '키 없음 — 폴백 AI 사용 중';
+  st.className = 'api-key-status ' + (saved ? 'ok' : '');
+  modal.classList.add('show');
+  input.focus();
+}
+
+function closeApiKeyModal() {
+  document.getElementById('api-key-modal')?.classList.remove('show');
+}
+
+function saveApiKey() {
+  const input = document.getElementById('api-key-input');
+  const st    = document.getElementById('api-key-status');
+  const key   = (input?.value || '').trim();
+
+  if (key && !key.startsWith('AIza')) {
+    st.textContent = '⚠ 유효하지 않은 키 형식 (AIzaSy... 로 시작해야 함)';
+    st.className   = 'api-key-status err';
+    return;
+  }
+
+  if (key) {
+    localStorage.setItem(_LSKEY, key);
+  } else {
+    localStorage.removeItem(_LSKEY);
+  }
+
+  // GeminiClient에 즉시 반영 + FallbackAI 락 해제
+  if (window.gameScene?.enemyAI?.gemini) {
+    window.gameScene.enemyAI.gemini.apiKey    = key;
+    window.gameScene.enemyAI.usingFallback    = false;
+  }
+
+  st.textContent = key ? `✔ 저장 완료. 다음 턴부터 Gemini AI가 적을 지휘합니다.`
+                       : '키 삭제됨 — 폴백 AI 사용';
+  st.className = 'api-key-status ok';
+  setTimeout(closeApiKeyModal, 1800);
+}
+
+function clearApiKey() {
+  document.getElementById('api-key-input').value = '';
+  saveApiKey();
+}

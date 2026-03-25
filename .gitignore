@@ -1,0 +1,19 @@
+# ── 보안: API 키 파일 ──────────────────────────────────────────
+# Gemini API 키는 절대 소스에 포함하지 않는다.
+# 게임 내 'AI 설정' 버튼으로 입력 → 브라우저 localStorage에만 저장.
+*.env
+.env.*
+secrets.*
+api_key.*
+*.local.js
+
+# ── Node / 빌드 산출물 ──────────────────────────────────────────
+node_modules/
+dist/
+.cache/
+
+# ── OS / IDE ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+.idea/
