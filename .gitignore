@@ -1,11 +1,9 @@
 # ── 보안: API 키 파일 ──────────────────────────────────────────
-# Gemini API 키는 절대 소스에 포함하지 않는다.
-# 게임 내 'AI 설정' 버튼으로 입력 → 브라우저 localStorage에만 저장.
+# config.secret.js 에 Gemini API 키를 넣고 절대 커밋하지 않는다.
+# 템플릿: src/config.secret.example.js
+src/config.secret.js
 *.env
 .env.*
-secrets.*
-api_key.*
-*.local.js
 
 # ── Node / 빌드 산출물 ──────────────────────────────────────────
 node_modules/

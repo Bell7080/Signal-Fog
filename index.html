@@ -634,49 +634,6 @@
     }
     #result-overlay.show { display: flex; }
 
-    /* ── API 키 설정 모달 ── */
-    #api-key-modal {
-      display: none;
-      position: fixed; inset: 0;
-      z-index: 200;
-      background: rgba(4,6,4,.92);
-      align-items: center; justify-content: center;
-    }
-    #api-key-modal.show { display: flex; }
-    #api-key-panel {
-      border: 1px solid var(--col-green);
-      background: rgba(8,12,10,.98);
-      padding: 28px 36px;
-      min-width: 340px;
-      box-shadow: 0 0 30px rgba(57,255,142,.15);
-    }
-    #api-key-panel h3 {
-      font-size: .7rem;
-      letter-spacing: .18em;
-      color: var(--col-green);
-      margin: 0 0 6px 0;
-    }
-    #api-key-panel p {
-      font-size: .55rem;
-      color: var(--col-text-dim);
-      margin: 0 0 14px 0;
-      line-height: 1.6;
-    }
-    #api-key-input {
-      width: 100%; box-sizing: border-box;
-      background: #060d06; border: 1px solid var(--col-green-dim);
-      color: var(--col-green); font-family: inherit;
-      font-size: .6rem; padding: 7px 10px;
-      letter-spacing: .05em; margin-bottom: 12px;
-      outline: none;
-    }
-    #api-key-input:focus { border-color: var(--col-green); }
-    .api-key-status {
-      font-size: .52rem; margin-bottom: 10px;
-      min-height: 1em;
-    }
-    .api-key-status.ok  { color: var(--col-green); }
-    .api-key-status.err { color: var(--col-red); }
 
     #result-panel {
       border: 1px solid var(--col-green);
@@ -809,12 +766,6 @@
         <div class="resource-row" id="terrain-row" style="color:var(--col-red);font-size:.57rem;margin-top:2px;display:none;">
           ⚠ 통신 음영 구역
         </div>
-        <button id="api-key-btn" onclick="openApiKeyModal()"
-          style="margin-top:8px;width:100%;font-size:.52rem;padding:4px 0;
-                 background:transparent;border:1px solid var(--col-green-dim);
-                 color:var(--col-text-dim);cursor:pointer;letter-spacing:.1em;">
-          ⚙ AI 설정
-        </button>
       </div>
 
     </aside>
@@ -885,27 +836,6 @@
     </div>
   </footer>
 
-  <!-- ── API 키 설정 모달 ── -->
-  <div id="api-key-modal">
-    <div id="api-key-panel">
-      <h3>⚙ GEMINI AI 설정</h3>
-      <p>
-        Google AI Studio에서 발급한 API 키를 입력하세요.<br>
-        키는 이 브라우저의 로컬 스토리지에만 저장되며<br>
-        소스코드·서버로 전송되지 않습니다.<br>
-        비워두면 내장 폴백 AI가 작동합니다.
-      </p>
-      <input id="api-key-input" type="password"
-             placeholder="AIzaSy..." spellcheck="false" autocomplete="off" />
-      <div class="api-key-status" id="api-key-status"></div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn primary" onclick="saveApiKey()" style="flex:1;">저장</button>
-        <button class="btn danger"  onclick="clearApiKey()" style="flex:1;">삭제</button>
-        <button class="btn"         onclick="closeApiKeyModal()" style="flex:1;">닫기</button>
-      </div>
-    </div>
-  </div>
-
   <!-- ── 결과 오버레이 ── -->
   <div id="result-overlay">
     <div id="result-panel">
@@ -921,6 +851,8 @@
 
 <!-- ── 게임 소스 로드 (의존성 순서) ── -->
 <script src="src/config.js"></script>
+<!-- config.secret.js 는 .gitignore 등록 파일 — 없어도 오류 없음 -->
+<script src="src/config.secret.js" onerror="void 0"></script>
 <script src="src/ui/ChatUI.js"></script>
 <script src="src/ui/HUD.js"></script>
 <script src="src/ui/MiniMap.js"></script>
