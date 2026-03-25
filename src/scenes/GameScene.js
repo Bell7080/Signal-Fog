@@ -98,14 +98,19 @@ class GameScene {
     this.camera.position.set(0, 9, 8);
     this.camera.lookAt(0, 0, 0);
 
-    // OrbitControls
-    this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0, 0, 0);
-    this.controls.enableDamping  = true;
-    this.controls.dampingFactor  = 0.08;
-    this.controls.minDistance    = 3;
-    this.controls.maxDistance    = 22;
-    this.controls.maxPolarAngle  = Math.PI / 2.05;
+    // OrbitControls (로드 실패 시 null — 정적 카메라로 폴백)
+    try {
+      this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+      this.controls.target.set(0, 0, 0);
+      this.controls.enableDamping  = true;
+      this.controls.dampingFactor  = 0.08;
+      this.controls.minDistance    = 3;
+      this.controls.maxDistance    = 22;
+      this.controls.maxPolarAngle  = Math.PI / 2.05;
+    } catch (e) {
+      console.warn('[Signal-Fog] OrbitControls 초기화 실패 — 정적 카메라 사용:', e.message);
+      this.controls = null;
+    }
 
     // 조명 (홀로그램 느낌: 어두운 배경 + 초록 포인트 라이트)
     const ambient = new THREE.AmbientLight(0x0a2010, 1.2);
@@ -489,23 +494,24 @@ class GameScene {
     return this.comms ? Math.round(this.comms.calcQuality({ terrain: squad.terrain })) : 100;
   }
 
-  /* ── 입력 설정 (마우스 클릭 + HUD 좌표) ── */
+  /* ── 입력 설정 (pointerdown/up → OrbitControls 충돌 방지) ── */
   _setupInput() {
     const canvas = this.renderer.domElement;
+    canvas.style.pointerEvents = 'auto';
 
-    canvas.addEventListener('mousedown', (e) => {
+    canvas.addEventListener('pointerdown', (e) => {
       this._mouseDownPos = { x: e.clientX, y: e.clientY };
     });
 
-    canvas.addEventListener('mouseup', (e) => {
+    canvas.addEventListener('pointerup', (e) => {
       if (!this._mouseDownPos) return;
       const dx = Math.abs(e.clientX - this._mouseDownPos.x);
       const dy = Math.abs(e.clientY - this._mouseDownPos.y);
       this._mouseDownPos = null;
-      if (dx < 5 && dy < 5) this._onCanvasClick(e);
+      if (dx < 6 && dy < 6) this._onCanvasClick(e);
     });
 
-    canvas.addEventListener('mousemove', (e) => {
+    canvas.addEventListener('pointermove', (e) => {
       const hit = this._raycastTile(e);
       if (hit) {
         const el = document.getElementById('hud-coord');
@@ -625,7 +631,7 @@ class GameScene {
     this._lastTime = ts;
 
     this._updateAnimations(delta);
-    this.controls.update();
+    if (this.controls) this.controls.update();
     this.renderer.render(this.scene3d, this.camera);
   }
 }
