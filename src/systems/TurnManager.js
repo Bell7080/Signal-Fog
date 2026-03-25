@@ -39,6 +39,8 @@ class TurnManager {
     }
     // 배터리 소모
     this.scene.comms.drainBattery();
+    // 포그 오브 워 갱신
+    if (typeof this.scene._updateFog === 'function') this.scene._updateFog();
     this.scene._syncPanel();
   }
 
@@ -125,30 +127,40 @@ class TurnManager {
 
   /* ── 승패 판정 ── */
   _checkResult() {
-    const allyAlive  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
-    const enemyAlive = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
+    const allyAll    = this.scene.squads.filter(s => s.side === 'ally');
+    const enemyAll   = this.scene.squads.filter(s => s.side === 'enemy');
+    const allyAlive  = allyAll.filter(s => s.alive);
+    const enemyAlive = enemyAll.filter(s => s.alive);
 
     if (allyAlive.length === 0) {
-      hud.setStatus('⚠ 패배 — 아군 전멸');
-      chatUI.addLog('SYSTEM', null, '⚠ 아군 전멸 — 훈련 종료 (패배)', 'system');
-      document.getElementById('hud-phase').textContent = '종료';
+      this._showResult(false, {
+        turns: this.turn, reason: '아군 전멸',
+        allyAlive: 0,                allyTotal: allyAll.length,
+        enemyAlive: enemyAlive.length, enemyTotal: enemyAll.length,
+      });
       return;
     }
     if (enemyAlive.length === 0) {
-      hud.setStatus('승리 — 적군 전멸!');
-      chatUI.addLog('SYSTEM', null, '적군 전멸 — 훈련 종료 (승리)', 'system');
-      document.getElementById('hud-phase').textContent = '종료';
+      this._showResult(true, {
+        turns: this.turn, reason: '적군 전멸',
+        allyAlive: allyAlive.length,  allyTotal: allyAll.length,
+        enemyAlive: 0,               enemyTotal: enemyAll.length,
+      });
       return;
     }
     if (this.turn >= CONFIG.TURN_LIMIT) {
-      hud.setStatus(`턴 제한 도달 (${CONFIG.TURN_LIMIT}턴) — 훈련 종료`);
-      chatUI.addLog('SYSTEM', null, `${CONFIG.TURN_LIMIT}턴 경과 — 훈련 종료`, 'system');
-      document.getElementById('hud-phase').textContent = '종료';
+      const allyTroops  = allyAlive.reduce((a, s) => a + s.troops, 0);
+      const enemyTroops = enemyAlive.reduce((a, s) => a + s.troops, 0);
+      this._showResult(allyTroops >= enemyTroops, {
+        turns: this.turn, reason: `${CONFIG.TURN_LIMIT}턴 경과`,
+        allyAlive: allyAlive.length,  allyTotal: allyAll.length,
+        enemyAlive: enemyAlive.length, enemyTotal: enemyAll.length,
+      });
       return;
     }
 
-    // 목표 지점 점령 확인
-    const obj = DEMO_OBJECTIVE;
+    // 목표 지점 점령 알림
+    const obj   = DEMO_OBJECTIVE;
     const onObj = allyAlive.find(s => s.pos.col === obj.col && s.pos.row === obj.row);
     if (onObj) {
       chatUI.addLog('SYSTEM', null,
@@ -156,6 +168,34 @@ class TurnManager {
     }
 
     this._nextTurn();
+  }
+
+  /* ── 결과 오버레이 표시 ── */
+  _showResult(win, data) {
+    hud.stopTimer();
+    this.scene.phase = 'RESULT';
+    document.getElementById('hud-phase').textContent = '종료';
+    hud.setStatus(win ? '훈련 완료 — 승리' : '훈련 종료 — 패배');
+    chatUI.addLog('SYSTEM', null,
+      win ? `훈련 완료 — 승리 (${data.reason})` : `훈련 종료 — 패배 (${data.reason})`,
+      'system');
+
+    const overlay = document.getElementById('result-overlay');
+    if (!overlay) return;
+
+    document.getElementById('result-reason').textContent = `종료 사유 // ${data.reason}`;
+
+    const title = document.getElementById('result-title');
+    title.textContent = win ? '승리' : '패배';
+    title.className   = win ? '' : 'lose';
+
+    const enemyClass = data.enemyAlive > 0 ? ' red' : '';
+    document.getElementById('result-body').innerHTML =
+      `소요 턴<span class="rv">${data.turns} / ${CONFIG.TURN_LIMIT}</span><br>` +
+      `아군 잔존<span class="rv">${data.allyAlive} / ${data.allyTotal}</span><br>` +
+      `적군 잔존<span class="rv${enemyClass}">${data.enemyAlive} / ${data.enemyTotal}</span>`;
+
+    overlay.classList.add('show');
   }
 
   _nextTurn() {

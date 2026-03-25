@@ -621,6 +621,64 @@
       flex: 1;
       text-align: center;
     }
+
+    /* ─────────────────────────────────────────
+       RESULT OVERLAY — 게임 종료 결과 화면
+    ───────────────────────────────────────── */
+    #result-overlay {
+      display: none;
+      position: absolute; inset: 0;
+      z-index: 100;
+      background: rgba(4,6,4,.88);
+      align-items: center; justify-content: center;
+    }
+    #result-overlay.show { display: flex; }
+
+    #result-panel {
+      border: 1px solid var(--col-green);
+      box-shadow: 0 0 40px rgba(57,255,142,.18), inset 0 0 20px rgba(57,255,142,.04);
+      background: rgba(8,12,10,.98);
+      padding: 36px 52px;
+      text-align: center;
+      min-width: 320px;
+    }
+
+    #result-reason {
+      font-size: .6rem;
+      letter-spacing: .18em;
+      color: var(--col-text-dim);
+      margin-bottom: 10px;
+    }
+
+    #result-title {
+      font-size: 1.9rem;
+      letter-spacing: .22em;
+      color: var(--col-green);
+      text-shadow: 0 0 24px rgba(57,255,142,.6);
+      margin-bottom: 20px;
+    }
+
+    #result-title.lose {
+      color: var(--col-red);
+      text-shadow: 0 0 24px rgba(255,68,68,.6);
+    }
+
+    .result-sep {
+      width: 100%; height: 1px;
+      background: var(--col-border);
+      margin: 0 0 20px;
+    }
+
+    #result-body {
+      font-size: .66rem;
+      color: var(--col-text-dim);
+      line-height: 2.4;
+      margin-bottom: 28px;
+      text-align: left;
+    }
+
+    #result-body .rv { color: var(--col-green); float: right; }
+    #result-body .rv.red { color: var(--col-red); }
   </style>
 </head>
 
@@ -776,6 +834,17 @@
       <button class="btn danger" onclick="surrenderAction()">항복</button>
     </div>
   </footer>
+
+  <!-- ── 결과 오버레이 ── -->
+  <div id="result-overlay">
+    <div id="result-panel">
+      <div id="result-reason">훈련 종료</div>
+      <div id="result-title">승리</div>
+      <div class="result-sep"></div>
+      <div id="result-body"></div>
+      <button class="btn primary" onclick="location.reload()">▶ 다시 시작</button>
+    </div>
+  </div>
 
 </div><!-- /app-wrapper -->
 

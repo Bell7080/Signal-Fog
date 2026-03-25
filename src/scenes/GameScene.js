@@ -79,6 +79,11 @@ class GameScene {
 
     // 마우스 클릭 vs 드래그 구분
     this._mouseDownPos  = null;
+
+    // FogOfWar
+    this.fog          = null;
+    this._fogMeshes   = {};   // 'col,row' → THREE.Mesh (dark overlay)
+    this._ghostMeshes = {};   // squadId  → THREE.Sprite (last-known marker)
   }
 
   /* ── 초기화 진입점 ── */
@@ -163,6 +168,85 @@ class GameScene {
     this.gridMap.build(_generateMap());
     this._drawObjective();
     this._initSquads();
+    this._initFog();
+    this._updateFog();
+  }
+
+  /* ── FogOfWar 초기화 — 타일 안개 오버레이 + 적 고스트 메시 생성 ── */
+  _initFog() {
+    this.fog = new FogOfWar(this.gridMap);
+    const s3 = this.scene3d;
+    const gm = this.gridMap;
+
+    for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
+      for (let c = 0; c < CONFIG.GRID_COLS; c++) {
+        const h  = gm._tileHeight(gm.tiles[r][c].terrain.id);
+        const wx = c * gm.TILE_W + gm.OFFSET_X;
+        const wz = r * gm.TILE_W + gm.OFFSET_Z;
+
+        const geo = new THREE.PlaneGeometry(gm.TILE_W, gm.TILE_W);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0x000000, transparent: true, opacity: 0,
+          depthWrite: false, side: THREE.DoubleSide,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(wx, h + 0.06, wz);
+        mesh.renderOrder = 3;
+        s3.add(mesh);
+        this._fogMeshes[`${c},${r}`] = mesh;
+      }
+    }
+
+    // 적군 고스트 (시야 밖으로 사라진 뒤 마지막 위치 표시)
+    for (const squad of this.squads.filter(s => s.side === 'enemy')) {
+      const ghost = _makeTextSprite('?', '#882222');
+      ghost.scale.set(0.7, 0.7, 1);
+      ghost.visible = false;
+      s3.add(ghost);
+      this._ghostMeshes[squad.id] = ghost;
+    }
+  }
+
+  /* ── FogOfWar 갱신 — 아군 시야 재계산 후 오버레이·적군 가시성 업데이트 ── */
+  _updateFog() {
+    if (!this.fog) return;
+    const allySquads = this.squads.filter(s => s.side === 'ally' && s.alive);
+    this.fog.computeVisible(allySquads);
+    const gm = this.gridMap;
+
+    // 타일 안개 오버레이
+    for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
+      for (let c = 0; c < CONFIG.GRID_COLS; c++) {
+        const m = this._fogMeshes[`${c},${r}`];
+        if (m) m.material.opacity = this.fog.isVisible(c, r) ? 0 : 0.76;
+      }
+    }
+
+    // 적군 표시·은닉 + 고스트 갱신
+    for (const squad of this.squads.filter(s => s.side === 'enemy')) {
+      const inSight = this.fog.isVisible(squad.pos.col, squad.pos.row);
+      if (squad.mesh) squad.mesh.visible = squad.alive && inSight;
+
+      const ghost = this._ghostMeshes[squad.id];
+      if (!ghost) continue;
+
+      if (inSight && squad.alive) {
+        // 현재 시야 내 → 마지막 위치 갱신, 고스트 숨김
+        this.fog.updateLastKnown(squad.id, squad.pos);
+        ghost.visible = false;
+      } else if (squad.alive) {
+        // 시야 밖 생존 → 마지막 목격 위치에 고스트 표시
+        const lk = this.fog.getLastKnown(squad.id);
+        if (lk) {
+          const wp = gm.toWorld(lk.col, lk.row);
+          ghost.position.set(wp.x, wp.y + 0.38, wp.z);
+          ghost.visible = true;
+        }
+      } else {
+        ghost.visible = false;
+      }
+    }
   }
 
   /* ── 목표 지점 시각화 ── */
@@ -501,6 +585,8 @@ class GameScene {
       if (tag) {
         if (!squad.alive) {
           tag.textContent = '전멸'; tag.className = 'squad-status-tag combat';
+        } else if (q < 40) {
+          tag.textContent = '통신두절'; tag.className = 'squad-status-tag combat';
         } else if (this.selectedSquad?.id === squad.id) {
           tag.textContent = '선택됨'; tag.className = 'squad-status-tag moving';
         } else {
@@ -512,6 +598,13 @@ class GameScene {
 
       card.classList.toggle('active', this.selectedSquad?.id === squad.id);
     });
+
+    // 음영구역(계곡) 경고 표시
+    const allyInValley = this.squads.some(
+      s => s.side === 'ally' && s.alive && s.terrain?.id === 'valley'
+    );
+    const terrainWarn = document.getElementById('terrain-row');
+    if (terrainWarn) terrainWarn.style.display = allyInValley ? '' : 'none';
 
     const batEl = document.querySelector('.commander-block .resource-val');
     if (batEl) {
