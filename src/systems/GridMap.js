@@ -1,23 +1,26 @@
 /* ============================================================
-   GridMap.js — 8×8 정사각형 그리드 생성 및 좌표 계산
+   GridMap.js — Three.js 3D 와이어프레임 그리드 생성
+   BoxGeometry 타일 + EdgesGeometry 홀로그램 와이어프레임
    ============================================================ */
 
 class GridMap {
 
   constructor(scene) {
-    this.scene      = scene;
+    this.scene      = scene;         // GameScene (scene.scene3d = THREE.Scene)
     this.cols       = CONFIG.GRID_COLS;
     this.rows       = CONFIG.GRID_ROWS;
-    this.tSize      = CONFIG.TILE_SIZE;
     this.tiles      = [];
-    this._tileGfx   = null;
-    this._gridGfx   = null;
-    this.hlGfx      = null; // highlight layer
+    this._tileMeshes = [];           // 레이캐스팅용 투명 평면
+    this._highlights = [];           // 활성 하이라이트 메시
+
+    // 타일 1칸 = 1 Three.js 단위, 그리드 원점 중앙 정렬
+    this.TILE_W   = 1.0;
+    this.OFFSET_X = -(this.cols / 2) + 0.5;
+    this.OFFSET_Z = -(this.rows / 2) + 0.5;
   }
 
-  /* ── 전체 타일 생성 및 렌더링 ── */
+  /* ── 전체 타일 생성 ── */
   build(layout) {
-    // 타일 데이터 초기화
     for (let r = 0; r < this.rows; r++) {
       this.tiles[r] = [];
       for (let c = 0; c < this.cols; c++) {
@@ -30,118 +33,174 @@ class GridMap {
       }
     }
     this._drawTiles();
-    this._drawGrid();
     this._drawLabels();
-    this.hlGfx = this.scene.add.graphics().setDepth(3);
+  }
+
+  /* ── 지형별 높이 ── */
+  _tileHeight(terrainId) {
+    const h = { open: 0.15, forest: 0.35, valley: 0.08, hill: 0.65 };
+    return h[terrainId] !== undefined ? h[terrainId] : 0.15;
+  }
+
+  /* ── 지형별 내부 채우기 색 ── */
+  _tileFillColor(terrainId) {
+    const c = { open: 0x0d1f14, forest: 0x061306, valley: 0x060f1a, hill: 0x1a1006 };
+    return c[terrainId] !== undefined ? c[terrainId] : 0x0d1f14;
+  }
+
+  /* ── 지형별 와이어프레임 색 ── */
+  _edgeColor(terrainId) {
+    const c = { open: 0x39ff8e, forest: 0x22aa55, valley: 0x2277cc, hill: 0xffb84d };
+    return c[terrainId] !== undefined ? c[terrainId] : 0x39ff8e;
   }
 
   _drawTiles() {
-    const COLOR = {
-      open:   0x1a2e14,
-      forest: 0x0e1f09,
-      valley: 0x0d1c2a,
-      hill:   0x2a1f0f,
-    };
-    const BORDER = {
-      open:   0x2a4a20,
-      forest: 0x163010,
-      valley: 0x163040,
-      hill:   0x3d2e18,
-    };
-
-    this._tileGfx = this.scene.add.graphics().setDepth(0);
+    const s3 = this.scene.scene3d;
 
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
-        const id  = this.tiles[r][c].terrain.id;
-        const x   = c * this.tSize;
-        const y   = r * this.tSize;
-        const col = COLOR[id] || COLOR.open;
-        const bdr = BORDER[id] || BORDER.open;
+        const tile = this.tiles[r][c];
+        const tid  = tile.terrain.id;
+        const h    = this._tileHeight(tid);
+        const wx   = c * this.TILE_W + this.OFFSET_X;
+        const wz   = r * this.TILE_W + this.OFFSET_Z;
 
-        this._tileGfx.fillStyle(col, 1);
-        this._tileGfx.fillRect(x + 1, y + 1, this.tSize - 2, this.tSize - 2);
+        // 박스 메시 (반투명 내부)
+        const geo = new THREE.BoxGeometry(
+          this.TILE_W - 0.03, h, this.TILE_W - 0.03
+        );
+        const mat = new THREE.MeshLambertMaterial({
+          color: this._tileFillColor(tid),
+          transparent: true,
+          opacity: 0.80,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(wx, h / 2, wz);
+        mesh.userData = { col: c, row: r, isTile: true };
+        s3.add(mesh);
 
-        // 지형 구분 테두리 (지형 종류가 다를 때만)
-        this._tileGfx.lineStyle(1, bdr, 0.4);
-        this._tileGfx.strokeRect(x + 1, y + 1, this.tSize - 2, this.tSize - 2);
-      }
-    }
+        // 엣지 와이어프레임 (홀로그램 효과)
+        const edgeGeo = new THREE.EdgesGeometry(geo);
+        const edgeMat = new THREE.LineBasicMaterial({
+          color: this._edgeColor(tid),
+          transparent: true,
+          opacity: 0.75,
+        });
+        const edges = new THREE.LineSegments(edgeGeo, edgeMat);
+        mesh.add(edges);
 
-    // 지형 레이블 (개활지 제외)
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        const t = this.tiles[r][c].terrain;
-        if (t.id === 'open') continue;
-        const x = c * this.tSize + this.tSize / 2;
-        const y = r * this.tSize + this.tSize - 9;
-        this.scene.add.text(x, y, t.label, {
-          fontFamily: "'Share Tech Mono', monospace",
-          fontSize: '8px', color: '#3a5a30',
-        }).setOrigin(0.5, 1).setDepth(1);
+        // 상면 바닥 평면 (레이캐스팅 전용, invisible)
+        const planeGeo = new THREE.PlaneGeometry(
+          this.TILE_W - 0.05, this.TILE_W - 0.05
+        );
+        const planeMat = new THREE.MeshBasicMaterial({
+          visible: false,
+          side: THREE.DoubleSide,
+        });
+        const plane = new THREE.Mesh(planeGeo, planeMat);
+        plane.rotation.x = -Math.PI / 2;
+        plane.position.set(wx, h + 0.01, wz);
+        plane.userData = { col: c, row: r, isTile: true };
+        s3.add(plane);
+        this._tileMeshes.push(plane);
       }
     }
   }
 
-  _drawGrid() {
-    this._gridGfx = this.scene.add.graphics().setDepth(2);
-    this._gridGfx.lineStyle(1, 0x1e3a28, 0.5);
-    for (let c = 0; c <= this.cols; c++) {
-      this._gridGfx.lineBetween(c * this.tSize, 0, c * this.tSize, this.rows * this.tSize);
-    }
-    for (let r = 0; r <= this.rows; r++) {
-      this._gridGfx.lineBetween(0, r * this.tSize, this.cols * this.tSize, r * this.tSize);
-    }
-  }
-
+  /* ── 좌표 레이블 스프라이트 ── */
   _drawLabels() {
-    const style = { fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: '#2a5a38' };
-    // 열 레이블 (A~H)
+    const s3 = this.scene.scene3d;
+
+    // 열 레이블 A~H (앞쪽)
     for (let c = 0; c < this.cols; c++) {
-      this.scene.add.text(c * this.tSize + this.tSize / 2, 2,
-        String.fromCharCode(65 + c), style).setOrigin(0.5, 0).setDepth(4);
+      const sprite = _makeTextSprite(String.fromCharCode(65 + c), '#2a5a38');
+      sprite.scale.set(0.45, 0.45, 1);
+      sprite.position.set(
+        c * this.TILE_W + this.OFFSET_X,
+        0.25,
+        this.OFFSET_Z - this.TILE_W * 0.7
+      );
+      s3.add(sprite);
     }
-    // 행 레이블 (01~08)
+
+    // 행 레이블 01~08 (왼쪽)
     for (let r = 0; r < this.rows; r++) {
-      this.scene.add.text(2, r * this.tSize + this.tSize / 2,
-        String(r + 1).padStart(2, '0'), style).setOrigin(0, 0.5).setDepth(4);
+      const sprite = _makeTextSprite(String(r + 1).padStart(2, '0'), '#2a5a38');
+      sprite.scale.set(0.45, 0.45, 1);
+      sprite.position.set(
+        this.OFFSET_X - this.TILE_W * 0.7,
+        0.25,
+        r * this.TILE_W + this.OFFSET_Z
+      );
+      s3.add(sprite);
     }
   }
 
-  /* ── 하이라이트 ── */
-  highlightTile(col, row, color = 0x39ff8e, alpha = 0.25) {
+  /* ── 타일 하이라이트 ── */
+  highlightTile(col, row, colorHex, alpha = 0.25) {
     if (!this.isInBounds(col, row)) return;
-    this.hlGfx.fillStyle(color, alpha);
-    this.hlGfx.fillRect(
-      col * this.tSize + 2, row * this.tSize + 2,
-      this.tSize - 4, this.tSize - 4
-    );
+    const tile = this.tiles[row][col];
+    const h    = this._tileHeight(tile.terrain.id);
+    const wx   = col * this.TILE_W + this.OFFSET_X;
+    const wz   = row * this.TILE_W + this.OFFSET_Z;
+
+    const geo = new THREE.PlaneGeometry(this.TILE_W - 0.08, this.TILE_W - 0.08);
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: alpha,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(wx, h + 0.02, wz);
+    this.scene.scene3d.add(mesh);
+    this._highlights.push(mesh);
   }
 
-  clearHighlights() { this.hlGfx.clear(); }
-
-  /* ── 좌표 변환 ── */
-  getTileAt(worldX, worldY) {
-    const col = Math.floor(worldX / this.tSize);
-    const row = Math.floor(worldY / this.tSize);
-    if (!this.isInBounds(col, row)) return null;
-    return { col, row, data: this.tiles[row][col] };
+  clearHighlights() {
+    for (const m of this._highlights) {
+      this.scene.scene3d.remove(m);
+      m.geometry.dispose();
+      m.material.dispose();
+    }
+    this._highlights = [];
   }
 
-  toPixel(col, row) {
+  /* ── 레이캐스팅 대상 메시 배열 반환 ── */
+  getTileMeshes() { return this._tileMeshes; }
+
+  /* ── 타일 (col, row) → 3D 월드 좌표 (분대 배치 기준) ── */
+  toWorld(col, row) {
+    const tile = this.tiles[row][col];
+    const h    = this._tileHeight(tile.terrain.id);
     return {
-      x: col * this.tSize + this.tSize / 2,
-      y: row * this.tSize + this.tSize / 2,
+      x: col * this.TILE_W + this.OFFSET_X,
+      y: h + 0.18,          // 타일 상면 + 분대 박스 절반 높이
+      z: row * this.TILE_W + this.OFFSET_Z,
     };
-  }
-
-  getNeighbors(col, row) {
-    return [[-1,0],[1,0],[0,-1],[0,1]]
-      .map(([dc, dr]) => ({ col: col + dc, row: row + dr }))
-      .filter(({ col: c, row: r }) => this.isInBounds(c, r));
   }
 
   isInBounds(col, row) {
     return col >= 0 && col < this.cols && row >= 0 && row < this.rows;
   }
+}
+
+/* ── 공용 텍스트 스프라이트 팩토리 (GridMap & GameScene 공유) ── */
+function _makeTextSprite(text, color = '#39ff8e') {
+  const canvas = document.createElement('canvas');
+  canvas.width  = 128;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.font = 'bold 38px "Share Tech Mono", monospace';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 64, 32);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthTest: false,
+  });
+  return new THREE.Sprite(mat);
 }
