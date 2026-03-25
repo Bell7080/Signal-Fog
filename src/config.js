@@ -43,7 +43,8 @@ const CONFIG = {
   /* ── AI ── */
   GEMINI_MODEL:   'gemini-2.0-flash',
   GEMINI_TIMEOUT: 3000,     // ms — 초과 시 FallbackAI 전환
-  // ⚠ 키는 src/config.secret.js 에만 입력 (.gitignore 등록, 커밋 금지)
+  // ⚠ 키는 src/config.secret.js 에만 입력 (이 파일에 넣지 말 것)
+  //   config.secret.js 내용: CONFIG.GEMINI_API_KEY = 'AIzaSy...';
   GEMINI_API_KEY: '',
 
 };
