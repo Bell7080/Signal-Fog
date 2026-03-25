@@ -858,9 +858,14 @@
      LEFT PANEL — 분대 선택
   ──────────────────────────────── */
   function selectSquad(card, squadId) {
-    document.querySelectorAll('.squad-card').forEach(c => c.classList.remove('active'));
-    card.classList.add('active');
-    chatUI.addLog('SYSTEM', null, `${squadId}분대 선택`, 'system');
+    // GameScene이 초기화된 경우 게임 내 선택과 동기화
+    if (window.gameScene && typeof window.gameScene.selectSquadById === 'function') {
+      window.gameScene.selectSquadById(squadId);
+    } else {
+      // GameScene 로드 전: 패널 UI만 업데이트
+      document.querySelectorAll('.squad-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+    }
   }
 </script>
 </body>

@@ -1,91 +1,147 @@
 /* ============================================================
    GridMap.js — 8×8 정사각형 그리드 생성 및 좌표 계산
-   CONFIG.GRID_COLS × CONFIG.GRID_ROWS 크기의 타일 맵 관리.
-
-   구현 순서 (하나씩 추가):
-     1. build()        — 타일 오브젝트 배열 생성 및 렌더링
-     2. getTileAt()    — 픽셀 좌표 → 그리드 좌표 변환
-     3. getNeighbors() — 인접 타일 목록 반환 (이동 경로용)
-     4. setTerrain()   — 특정 타일 지형 타입 설정
-     5. isInBounds()   — 좌표 유효성 검사
    ============================================================ */
 
 class GridMap {
 
-  /**
-   * @param {Phaser.Scene} scene - 타일을 렌더링할 씬
-   */
   constructor(scene) {
-    this.scene  = scene;
-    this.cols   = CONFIG.GRID_COLS;
-    this.rows   = CONFIG.GRID_ROWS;
-    this.tSize  = CONFIG.TILE_SIZE;
-    this.tiles  = [];  // 2D 배열 [row][col] — 각 셀은 { terrain, sprite, ... }
+    this.scene      = scene;
+    this.cols       = CONFIG.GRID_COLS;
+    this.rows       = CONFIG.GRID_ROWS;
+    this.tSize      = CONFIG.TILE_SIZE;
+    this.tiles      = [];
+    this._tileGfx   = null;
+    this._gridGfx   = null;
+    this.hlGfx      = null; // highlight layer
   }
 
-  /** 그리드 전체 타일 생성 및 초기 지형 배치 */
-  build() {
-    // TODO: CONFIG.TERRAIN 기준으로 타일 배치
-    // TODO: Phaser Graphics 또는 Image로 렌더링
+  /* ── 전체 타일 생성 및 렌더링 ── */
+  build(layout) {
+    // 타일 데이터 초기화
+    for (let r = 0; r < this.rows; r++) {
+      this.tiles[r] = [];
+      for (let c = 0; c < this.cols; c++) {
+        const key = layout ? layout[r][c] : 'OPEN';
+        this.tiles[r][c] = {
+          col: c, row: r,
+          terrain: CONFIG.TERRAIN[key] || CONFIG.TERRAIN.OPEN,
+          capturedBy: null, captureTurns: 0,
+        };
+      }
+    }
+    this._drawTiles();
+    this._drawGrid();
+    this._drawLabels();
+    this.hlGfx = this.scene.add.graphics().setDepth(3);
   }
 
-  /**
-   * 픽셀 좌표 → 그리드 {col, row} 반환
-   * @param {number} px
-   * @param {number} py
-   * @returns {{ col: number, row: number } | null}
-   */
-  getTileAt(px, py) {
-    const col = Math.floor(px / this.tSize);
-    const row = Math.floor(py / this.tSize);
+  _drawTiles() {
+    const COLOR = {
+      open:   0x1a2e14,
+      forest: 0x0e1f09,
+      valley: 0x0d1c2a,
+      hill:   0x2a1f0f,
+    };
+    const BORDER = {
+      open:   0x2a4a20,
+      forest: 0x163010,
+      valley: 0x163040,
+      hill:   0x3d2e18,
+    };
+
+    this._tileGfx = this.scene.add.graphics().setDepth(0);
+
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const id  = this.tiles[r][c].terrain.id;
+        const x   = c * this.tSize;
+        const y   = r * this.tSize;
+        const col = COLOR[id] || COLOR.open;
+        const bdr = BORDER[id] || BORDER.open;
+
+        this._tileGfx.fillStyle(col, 1);
+        this._tileGfx.fillRect(x + 1, y + 1, this.tSize - 2, this.tSize - 2);
+
+        // 지형 구분 테두리 (지형 종류가 다를 때만)
+        this._tileGfx.lineStyle(1, bdr, 0.4);
+        this._tileGfx.strokeRect(x + 1, y + 1, this.tSize - 2, this.tSize - 2);
+      }
+    }
+
+    // 지형 레이블 (개활지 제외)
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const t = this.tiles[r][c].terrain;
+        if (t.id === 'open') continue;
+        const x = c * this.tSize + this.tSize / 2;
+        const y = r * this.tSize + this.tSize - 9;
+        this.scene.add.text(x, y, t.label, {
+          fontFamily: "'Share Tech Mono', monospace",
+          fontSize: '8px', color: '#3a5a30',
+        }).setOrigin(0.5, 1).setDepth(1);
+      }
+    }
+  }
+
+  _drawGrid() {
+    this._gridGfx = this.scene.add.graphics().setDepth(2);
+    this._gridGfx.lineStyle(1, 0x1e3a28, 0.5);
+    for (let c = 0; c <= this.cols; c++) {
+      this._gridGfx.lineBetween(c * this.tSize, 0, c * this.tSize, this.rows * this.tSize);
+    }
+    for (let r = 0; r <= this.rows; r++) {
+      this._gridGfx.lineBetween(0, r * this.tSize, this.cols * this.tSize, r * this.tSize);
+    }
+  }
+
+  _drawLabels() {
+    const style = { fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: '#2a5a38' };
+    // 열 레이블 (A~H)
+    for (let c = 0; c < this.cols; c++) {
+      this.scene.add.text(c * this.tSize + this.tSize / 2, 2,
+        String.fromCharCode(65 + c), style).setOrigin(0.5, 0).setDepth(4);
+    }
+    // 행 레이블 (01~08)
+    for (let r = 0; r < this.rows; r++) {
+      this.scene.add.text(2, r * this.tSize + this.tSize / 2,
+        String(r + 1).padStart(2, '0'), style).setOrigin(0, 0.5).setDepth(4);
+    }
+  }
+
+  /* ── 하이라이트 ── */
+  highlightTile(col, row, color = 0x39ff8e, alpha = 0.25) {
+    if (!this.isInBounds(col, row)) return;
+    this.hlGfx.fillStyle(color, alpha);
+    this.hlGfx.fillRect(
+      col * this.tSize + 2, row * this.tSize + 2,
+      this.tSize - 4, this.tSize - 4
+    );
+  }
+
+  clearHighlights() { this.hlGfx.clear(); }
+
+  /* ── 좌표 변환 ── */
+  getTileAt(worldX, worldY) {
+    const col = Math.floor(worldX / this.tSize);
+    const row = Math.floor(worldY / this.tSize);
     if (!this.isInBounds(col, row)) return null;
     return { col, row, data: this.tiles[row][col] };
   }
 
-  /**
-   * 특정 좌표의 상하좌우 인접 타일 목록 반환
-   * @param {number} col
-   * @param {number} row
-   * @returns {Array<{col, row}>}
-   */
-  getNeighbors(col, row) {
-    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
-    return dirs
-      .map(([dc, dr]) => ({ col: col + dc, row: row + dr }))
-      .filter(({ col: c, row: r }) => this.isInBounds(c, r));
-  }
-
-  /**
-   * 지형 타입 설정
-   * @param {number} col
-   * @param {number} row
-   * @param {string} terrainId - CONFIG.TERRAIN의 키 (예: 'valley')
-   */
-  setTerrain(col, row, terrainId) {
-    if (!this.isInBounds(col, row)) return;
-    // TODO: this.tiles[row][col].terrain = CONFIG.TERRAIN[terrainId.toUpperCase()];
-  }
-
-  /**
-   * 그리드 범위 유효성 검사
-   * @param {number} col
-   * @param {number} row
-   * @returns {boolean}
-   */
-  isInBounds(col, row) {
-    return col >= 0 && col < this.cols && row >= 0 && row < this.rows;
-  }
-
-  /**
-   * 그리드 좌표 → 픽셀 중심 좌표 반환 (스프라이트 배치용)
-   * @param {number} col
-   * @param {number} row
-   * @returns {{ x: number, y: number }}
-   */
   toPixel(col, row) {
     return {
       x: col * this.tSize + this.tSize / 2,
       y: row * this.tSize + this.tSize / 2,
     };
+  }
+
+  getNeighbors(col, row) {
+    return [[-1,0],[1,0],[0,-1],[0,1]]
+      .map(([dc, dr]) => ({ col: col + dc, row: row + dr }))
+      .filter(({ col: c, row: r }) => this.isInBounds(c, r));
+  }
+
+  isInBounds(col, row) {
+    return col >= 0 && col < this.cols && row >= 0 && row < this.rows;
   }
 }

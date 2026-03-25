@@ -85,10 +85,13 @@ class HUD {
 
   /** CONFIRM 버튼 → TurnManager에 위임 */
   confirmTurn() {
-    chatUI.addLog('SYSTEM', null, '입력 확정 — 실행 대기 중', 'system');
-    this.setStatus('입력 확정 완료');
-    this.stopTimer();
-    // TODO: if (turnManager) turnManager.confirmInput();
+    if (window.gameScene && window.gameScene.turnManager) {
+      window.gameScene.turnManager.confirmInput();
+    } else {
+      chatUI.addLog('SYSTEM', null, '입력 확정 — 실행 대기 중', 'system');
+      this.setStatus('입력 확정 완료');
+      this.stopTimer();
+    }
   }
 
   /** 항복 버튼 */
