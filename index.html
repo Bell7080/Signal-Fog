@@ -1,21 +1,32 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SIGNAL-FOG // 사지방 전술 시뮬레이터</title>
 
-  <!-- ── 폰트 ── -->
+  <!-- ══════════════════════════════════════
+       FONTS
+       Share Tech Mono  → 터미널 숫자/코드
+       Noto Sans KR     → 한글 레이블
+  ══════════════════════════════════════ -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet" />
 
-  <!-- ── 스타일시트 ── -->
-  <link rel="stylesheet" href="css/base.css" />
-  <link rel="stylesheet" href="css/layout.css" />
-  <link rel="stylesheet" href="css/components.css" />
+  <!-- ══════════════════════════════════════
+       STYLESHEETS  — 역할별 분리
+       로드 순서 중요: base → layout → components → …
+  ══════════════════════════════════════ -->
+  <link rel="stylesheet" href="css/base.css" />        <!-- 토큰·리셋·타이포 -->
+  <link rel="stylesheet" href="css/layout.css" />      <!-- 앱 셸 그리드 -->
+  <link rel="stylesheet" href="css/components.css" />  <!-- 공통 컴포넌트 -->
+  <link rel="stylesheet" href="css/boot.css" />        <!-- 부팅 화면 -->
+  <link rel="stylesheet" href="css/animations.css" />  <!-- @keyframes 모음 -->
 
-  <!-- ── CDN ── -->
+  <!-- ══════════════════════════════════════
+       EXTERNAL LIBS  (JS 모듈보다 먼저 로드 필수)
+  ══════════════════════════════════════ -->
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -24,155 +35,224 @@
 </head>
 
 <body>
+<!-- ════════════════════════════════════════
+     APP WRAPPER  — 전체 화면 컨테이너
+════════════════════════════════════════ -->
 <div id="app-wrapper">
 
-  <!-- ── HEADER ── -->
-  <header id="header">
+  <!-- ── HEADER ─────────────────────────── -->
+  <header id="header" role="banner">
+
+    <!-- 게임 타이틀 -->
     <div class="header-title">
-      <h1>SIGNAL-FOG</h1>
-      <span>KCTC 과학화전투 시뮬레이터 // v0.1 ALPHA</span>
+      <h1 class="header-logo">SIGNAL<span class="logo-dash">-</span>FOG</h1>
+      <span class="header-subtitle">KCTC 과학화전투 시뮬레이터 // v0.1 ALPHA</span>
     </div>
-    <div class="header-status">
-      <span><span class="status-dot"></span> FIREBASE</span>
-      <span><span class="status-dot amber"></span> SYNC</span>
-      <span><span class="status-dot red"></span> ROOM</span>
-      <span id="clock" style="color:var(--col-green);letter-spacing:.1em;"></span>
+
+    <!-- 연결 상태 표시줄 -->
+    <div class="header-status" role="status" aria-label="시스템 연결 상태">
+      <span class="status-chip" data-status="firebase">
+        <span class="status-dot" data-state="ok"></span>FIREBASE
+      </span>
+      <span class="status-chip" data-status="sync">
+        <span class="status-dot" data-state="warn"></span>SYNC
+      </span>
+      <span class="status-chip" data-status="room">
+        <span class="status-dot" data-state="err"></span>ROOM
+      </span>
+      <!-- JS: BootScene._startClock() 이 업데이트 -->
+      <span id="clock" class="header-clock" aria-live="polite"></span>
     </div>
+
   </header>
+  <!-- /header -->
 
-  <!-- ── MAIN LAYOUT ── -->
-  <div id="main-layout">
+  <!-- ── MAIN LAYOUT ────────────────────── -->
+  <main id="main-layout" role="main">
 
-    <!-- ── LEFT PANEL ── -->
-    <aside class="panel" id="panel-left">
+    <!-- ── LEFT PANEL : 병사 현황 ── -->
+    <aside class="panel" id="panel-left" aria-label="병사 현황">
+
       <div class="panel-title">▸ 병사 현황</div>
 
-      <div class="role-card">
-        <div class="role-badge">BLUE FORCE</div>
+      <!-- 역할 카드 (JS: LobbyScene이 데이터 주입 예정) -->
+      <div class="role-card" id="role-card">
+        <div class="role-badge" data-force="blue">BLUE FORCE</div>
         <div class="role-name">홍길동 상병</div>
         <div class="role-unit">3중대 2소대 1분대 — 소총수</div>
       </div>
 
-      <div class="stat-block">
-        <div class="panel-title" style="border:none;padding:0 0 8px 0;font-size:.55rem;">SURVIVAL STATS</div>
-        <div class="stat-row">
-          <div class="stat-label">피로도</div>
-          <div class="stat-bar"><div class="stat-fill warn" style="width:42%"></div></div>
-          <div class="stat-val">42</div>
-        </div>
-        <div class="stat-row">
-          <div class="stat-label">배고픔</div>
-          <div class="stat-bar"><div class="stat-fill" style="width:78%"></div></div>
-          <div class="stat-val">78</div>
-        </div>
-        <div class="stat-row">
-          <div class="stat-label">수면</div>
-          <div class="stat-bar"><div class="stat-fill crit" style="width:18%"></div></div>
-          <div class="stat-val">18</div>
-        </div>
-        <div class="stat-row">
-          <div class="stat-label">체력</div>
-          <div class="stat-bar"><div class="stat-fill" style="width:91%"></div></div>
-          <div class="stat-val">91</div>
-        </div>
-      </div>
+      <!-- ── SURVIVAL STATS
+           data-stat="[key]" → HUD.js _updateStats() 가 바인딩
+           초기값은 HTML에 작성, 이후 JS가 덮어씀
+      ── -->
+      <section class="stat-block" aria-label="생존 스탯">
+        <div class="block-label">SURVIVAL STATS</div>
 
-      <div class="resource-block">
-        <div class="resource-row">
-          <span>무전기 배터리</span>
+        <div class="stat-row" data-stat="fatigue">
+          <span class="stat-label">피로도</span>
+          <div class="stat-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42">
+            <div class="stat-fill" data-level="warn" style="--pct:42%"></div>
+          </div>
+          <span class="stat-val">42</span>
+        </div>
+
+        <div class="stat-row" data-stat="hunger">
+          <span class="stat-label">배고픔</span>
+          <div class="stat-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="78">
+            <div class="stat-fill" style="--pct:78%"></div>
+          </div>
+          <span class="stat-val">78</span>
+        </div>
+
+        <div class="stat-row" data-stat="sleep">
+          <span class="stat-label">수면</span>
+          <div class="stat-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="18">
+            <div class="stat-fill" data-level="crit" style="--pct:18%"></div>
+          </div>
+          <span class="stat-val">18</span>
+        </div>
+
+        <div class="stat-row" data-stat="fitness">
+          <span class="stat-label">체력</span>
+          <div class="stat-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="91">
+            <div class="stat-fill" style="--pct:91%"></div>
+          </div>
+          <span class="stat-val">91</span>
+        </div>
+      </section>
+
+      <!-- ── RESOURCES
+           data-resource="[key]" → HUD.js _updateResources() 가 바인딩
+      ── -->
+      <section class="resource-block" aria-label="자원 현황">
+        <div class="block-label">RESOURCES</div>
+
+        <div class="resource-row" data-resource="battery">
+          <span class="resource-label">무전기 배터리</span>
           <span class="resource-val">73%</span>
         </div>
-        <div class="resource-row">
-          <span>탄약</span>
+        <div class="resource-row" data-resource="ammo">
+          <span class="resource-label">탄약</span>
           <span class="resource-val">180 / 210</span>
         </div>
-        <div class="resource-row">
-          <span>AP (행동력)</span>
-          <span class="resource-val" style="color:var(--col-amber);">2 / 4</span>
+        <div class="resource-row" data-resource="ap">
+          <span class="resource-label">AP (행동력)</span>
+          <span class="resource-val" data-alert="warn">2 / 4</span>
         </div>
-        <div class="resource-row">
-          <span>현재 지형</span>
-          <span class="resource-val" style="color:var(--col-text-dim);">계곡</span>
+        <div class="resource-row" data-resource="terrain">
+          <span class="resource-label">현재 지형</span>
+          <span class="resource-val" data-alert="dim">계곡</span>
         </div>
-        <div class="resource-row" style="color:var(--col-red);font-size:.58rem;margin-top:4px;">
+
+        <!-- 경고 배너 (JS: commsOK 에 따라 .hidden 토글) -->
+        <div class="warning-banner" id="comms-warning" role="alert">
           ⚠ 통신 음영 구역
         </div>
-      </div>
+      </section>
+
     </aside>
+    <!-- /panel-left -->
 
-    <!-- ── CENTER (Phaser 캔버스) ── -->
-    <div id="game-canvas-container">
+    <!-- ── CENTER : Phaser 캔버스 + 오버레이 ── -->
+    <div id="game-canvas-container" aria-label="전술 지도">
 
-      <!-- 부팅 화면 -->
-      <div id="boot-screen">
+      <!-- 부팅 화면 (BootScene.js가 제어) -->
+      <div id="boot-screen" role="status" aria-label="시스템 부팅 중">
         <div class="boot-logo">SIGNAL<br>FOG</div>
-        <div class="boot-sub">
-          <span>육군창업경진대회 2026 // 팀 LNG</span>
-        </div>
-        <div id="boot-log"></div>
+        <div class="boot-sub">육군창업경진대회 2026 // 팀 LNG</div>
+        <div id="boot-log" aria-live="polite"></div>
         <div class="boot-bar-wrap">
-          <div id="boot-bar"></div>
+          <div id="boot-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"></div>
         </div>
       </div>
 
-      <!-- HUD 오버레이 (캔버스 위) -->
-      <div id="hud-overlay">
-        <div class="hud-chip">TURN <span class="val" id="hud-turn">01</span></div>
-        <div class="hud-chip">GRID <span class="val" id="hud-coord">E-07</span></div>
-        <div class="hud-chip">PHASE <span class="val">입력</span></div>
+      <!-- HUD 오버레이 (캔버스 위, HUD.js + GameScene.js 가 업데이트) -->
+      <div id="hud-overlay" aria-label="게임 상태 표시">
+        <div class="hud-chip">
+          TURN <span class="hud-val" id="hud-turn">01</span>
+        </div>
+        <div class="hud-chip">
+          GRID <span class="hud-val" id="hud-coord">--</span>
+        </div>
+        <div class="hud-chip">
+          PHASE <span class="hud-val" id="hud-phase">대기</span>
+        </div>
+        <!-- 확장 슬롯: 필요 시 hud-chip 추가 -->
       </div>
 
     </div>
+    <!-- /game-canvas-container -->
 
-    <!-- ── RIGHT PANEL ── -->
-    <aside class="panel" id="panel-right">
+    <!-- ── RIGHT PANEL : 통신 채널 ── -->
+    <aside class="panel" id="panel-right" aria-label="통신 채널">
+
       <div class="panel-title">▸ 통신 채널</div>
 
-      <div class="channel-tabs">
-        <div class="ch-tab active" onclick="switchChannel(this,'지휘')">지휘</div>
-        <div class="ch-tab" onclick="switchChannel(this,'소대')">소대</div>
-        <div class="ch-tab" onclick="switchChannel(this,'분대')">분대</div>
-        <div class="ch-tab" onclick="switchChannel(this,'LOG')">LOG</div>
+      <!-- 채널 탭 (ChatUI.js가 바인딩) -->
+      <div class="channel-tabs" role="tablist" aria-label="채팅 채널">
+        <button class="ch-tab active" role="tab" aria-selected="true"  data-channel="지휘">지휘</button>
+        <button class="ch-tab"        role="tab" aria-selected="false" data-channel="소대">소대</button>
+        <button class="ch-tab"        role="tab" aria-selected="false" data-channel="분대">분대</button>
+        <button class="ch-tab"        role="tab" aria-selected="false" data-channel="LOG">LOG</button>
       </div>
 
-      <div id="chat-log"></div>
+      <!-- 채팅 로그 (ChatUI.js가 동적 주입) -->
+      <div id="chat-log" role="log" aria-live="polite" aria-label="채팅 로그"></div>
 
+      <!-- 입력창 -->
       <div id="chat-input-area">
-        <input id="chat-input" type="text" placeholder="무전 내용 입력 / SEND" maxlength="80" />
-        <button id="chat-send" onclick="sendChat()">SEND</button>
+        <input
+          id="chat-input"
+          type="text"
+          placeholder="무전 내용 입력…"
+          maxlength="80"
+          autocomplete="off"
+          aria-label="메시지 입력"
+        />
+        <button id="chat-send" aria-label="전송">SEND</button>
       </div>
+
     </aside>
+    <!-- /panel-right -->
 
-  </div><!-- /main-layout -->
+  </main>
+  <!-- /main-layout -->
 
-  <!-- ── FOOTER ── -->
-  <footer id="footer">
-    <div class="turn-timer-wrap">
+  <!-- ── FOOTER : 턴 타이머 + 액션 버튼 ── -->
+  <footer id="footer" role="contentinfo">
+
+    <!-- 타이머 (HUD.js가 제어) -->
+    <div class="turn-timer-wrap" aria-label="턴 입력 타이머">
       <div class="turn-label">TURN INPUT</div>
-      <div id="turn-timer">60</div>
+      <div id="turn-timer" aria-live="polite">60</div>
       <div class="timer-bar-wrap">
-        <div id="timer-bar"></div>
+        <div id="timer-bar" role="progressbar" aria-valuemin="0" aria-valuemax="60"></div>
       </div>
     </div>
 
-    <div class="footer-status" id="footer-status">
+    <!-- 상태 텍스트 (HUD.js setStatus() 가 업데이트) -->
+    <div id="footer-status" class="footer-status" role="status" aria-live="polite">
       대기 중 — 모든 플레이어 입력 완료 시 자동 실행
     </div>
 
-    <div class="action-buttons">
-      <button class="btn" onclick="holdAction()">HOLD</button>
-      <button class="btn primary" onclick="confirmTurn()">CONFIRM</button>
-      <button class="btn danger" onclick="surrenderAction()">항복</button>
+    <!-- 액션 버튼 (HUD.js _bindActions() 가 바인딩, onclick 제거) -->
+    <div class="action-buttons" role="group" aria-label="턴 액션">
+      <button class="btn"         data-action="hold">HOLD</button>
+      <button class="btn primary" data-action="confirm">CONFIRM</button>
+      <button class="btn danger"  data-action="surrender">항복</button>
     </div>
+
   </footer>
+  <!-- /footer -->
 
-</div><!-- /app-wrapper -->
+</div>
+<!-- /app-wrapper -->
 
-<!-- ── 게임 스크립트 (의존 순서 유지) ── -->
-<script src="js/boot.js"></script>
-<script src="js/timer.js"></script>
-<script src="js/chat.js"></script>
-<script src="js/actions.js"></script>
-<script src="js/game.js"></script>
+<!-- ══════════════════════════════════════
+     JS ENTRY POINT  — 단일 모듈 진입점
+     모든 import 는 js/main.js 에서 관리
+══════════════════════════════════════ -->
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

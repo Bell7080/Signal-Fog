@@ -1,0 +1,158 @@
+/* ════════════════════════════════════════════════════════════
+   css/boot.css  —  부팅 화면 전용 스타일
+   Signal-Fog  /  팀 LNG
+
+   ▸ BootScene.js가 DOM 제어 → 이 파일은 스타일만
+   ▸ GameScene 진입 후 #boot-screen 은 display:none
+   ▸ 테마 교체 시 이 파일만 수정하면 됨
+
+   SECTIONS:
+   [1] BOOT SCREEN 컨테이너
+   [2] 로고
+   [3] 서브타이틀
+   [4] 로그 출력 영역
+   [5] 프로그레스 바
+════════════════════════════════════════════════════════════ */
+
+
+/* ══════════════════════════════════════════════════════════
+   [1] BOOT SCREEN 컨테이너
+   ══════════════════════════════════════════════════════════ */
+#boot-screen {
+  position:       absolute;
+  inset:          0;
+  z-index:        var(--z-boot);
+
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  justify-content: center;
+  gap:            var(--space-lg);
+
+  background:     var(--col-bg);
+  padding:        var(--space-xl);
+
+  /* BootScene._finish() 가 opacity:0 → transition으로 페이드아웃 */
+  transition:     opacity var(--dur-slow) var(--ease-out);
+}
+
+/* CRT 스캔라인 효과 */
+#boot-screen::before {
+  content:        '';
+  position:       absolute;
+  inset:          0;
+  background:     repeating-linear-gradient(
+                    0deg,
+                    rgba(0,0,0,.08) 0px,
+                    rgba(0,0,0,.08) 1px,
+                    transparent     1px,
+                    transparent     2px
+                  );
+  pointer-events: none;
+  z-index:        1;
+}
+
+/* 주변부 비네팅 */
+#boot-screen::after {
+  content:        '';
+  position:       absolute;
+  inset:          0;
+  background:     radial-gradient(
+                    ellipse 80% 80% at 50% 50%,
+                    transparent 60%,
+                    rgba(0,0,0,.6) 100%
+                  );
+  pointer-events: none;
+  z-index:        1;
+}
+
+/* 모든 자식은 ::before/after 위에 */
+#boot-screen > * {
+  position:       relative;
+  z-index:        2;
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   [2] 로고
+   ══════════════════════════════════════════════════════════ */
+.boot-logo {
+  font-family:    var(--font-mono);
+  font-size:      clamp(2.4rem, 6vw, 5rem);
+  font-weight:    var(--fw-bold);
+  color:          var(--col-green);
+  letter-spacing: .2em;
+  text-align:     center;
+  line-height:    1.1;
+  text-shadow:
+    0 0 20px var(--col-green),
+    0 0 60px rgba(61,255,20,.3),
+    0 0 120px rgba(61,255,20,.1);
+  animation:      logo-flicker 8s ease-in-out infinite;
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   [3] 서브타이틀
+   ══════════════════════════════════════════════════════════ */
+.boot-sub {
+  font-family:    var(--font-mono);
+  font-size:      var(--fz-xs);
+  color:          var(--col-text-dim);
+  letter-spacing: .12em;
+  text-align:     center;
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   [4] 로그 출력 영역
+   ══════════════════════════════════════════════════════════ */
+#boot-log {
+  width:          min(480px, 90%);
+  max-height:     220px;
+  overflow-y:     auto;
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  background:     var(--col-bg-deep);
+  border:         1px solid var(--col-border);
+  border-radius:  var(--radius-md);
+  padding:        var(--space-sm) var(--space-md);
+}
+
+/* BootScene._bootStep() 이 생성하는 라인 */
+.log-line {
+  font-family:    var(--font-mono);
+  font-size:      var(--fz-xs);
+  color:          var(--col-green-dim);
+  letter-spacing: .04em;
+  animation:      type-in var(--dur-mid) var(--ease-out);
+  white-space:    pre-wrap;
+}
+
+/* 최신 줄 강조 */
+.log-line:last-child {
+  color: var(--col-green);
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   [5] 프로그레스 바
+   ══════════════════════════════════════════════════════════ */
+.boot-bar-wrap {
+  width:          min(480px, 90%);
+  height:         3px;
+  background:     var(--col-bg-mid);
+  border-radius:  var(--radius-sm);
+  overflow:       hidden;
+  border:         1px solid var(--col-border);
+}
+
+#boot-bar {
+  height:         100%;
+  width:          0%;                           /* BootScene.js 가 업데이트 */
+  background:     var(--col-green);
+  border-radius:  var(--radius-sm);
+  box-shadow:     0 0 8px var(--col-green);
+  transition:     width var(--dur-mid) var(--ease-out);
+}

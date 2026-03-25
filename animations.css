@@ -1,0 +1,224 @@
+/* ════════════════════════════════════════════════════════════
+   css/animations.css  —  @keyframes 모음
+   Signal-Fog  /  팀 LNG
+
+   ▸ 모든 애니메이션 정의를 한 파일에 집결
+   ▸ components.css / boot.css는 여기 이름을 참조만 함
+   ▸ 새 애니메이션 추가 시 아래 섹션 목록에 기재
+
+   SECTIONS:
+   [1] UI  — 일반 인터페이스 전환
+   [2] HUD — 전술 HUD 전용
+   [3] BOOT — 부팅 시퀀스
+   [4] AMBIENT — 배경 분위기 효과
+   [5] NOTIFICATION — 경고·토스트
+   [6] UTILITY — 재사용 헬퍼 클래스 (.animate-*)
+════════════════════════════════════════════════════════════ */
+
+
+/* ══════════════════════════════════════════════════════════
+   [1] UI — 일반 인터페이스
+   ══════════════════════════════════════════════════════════ */
+
+/* 채팅 로그 엔트리 슬라이드 인 */
+@keyframes slide-in {
+  from {
+    opacity:   0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity:   1;
+    transform: translateY(0);
+  }
+}
+
+/* 토스트 진입 */
+@keyframes toast-in {
+  from {
+    opacity:   0;
+    transform: translateY(8px) translateX(-50%);
+  }
+  to {
+    opacity:   1;
+    transform: translateY(0)   translateX(-50%);
+  }
+}
+
+/* 토스트 퇴장 */
+@keyframes toast-out {
+  from {
+    opacity:   1;
+    transform: translateY(0)    translateX(-50%);
+  }
+  to {
+    opacity:   0;
+    transform: translateY(-6px) translateX(-50%);
+  }
+}
+
+/* 패널 페이드 인 (씬 전환 후 컴포넌트 등장) */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* 위에서 아래로 슬라이드 (드롭다운·모달) */
+@keyframes drop-in {
+  from {
+    opacity:   0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity:   1;
+    transform: translateY(0);
+  }
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   [2] HUD — 전술 HUD 전용
+   ══════════════════════════════════════════════════════════ */
+
+/* 위험 수치 점멸 (타이머 10초 이하, crit stat) */
+@keyframes pulse-crit {
+  0%,100% { opacity: 1; }
+  50%     { opacity: .35; }
+}
+
+/* HUD 칩 등장 */
+@keyframes hud-pop {
+  0%   { transform: scale(.92); opacity: 0; }
+  70%  { transform: scale(1.04); }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+/* 유닛 이동 트레일 (GameScene 확장 시 사용) */
+@keyframes trail-fade {
+  from { opacity: .6; transform: scale(1); }
+  to   { opacity: 0;  transform: scale(1.8); }
+}
+
+/* 헥스 타일 하이라이트 펄스 */
+@keyframes hex-pulse {
+  0%,100% { opacity: .5; }
+  50%     { opacity: 1;  }
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   [3] BOOT — 부팅 시퀀스
+   ══════════════════════════════════════════════════════════ */
+
+/* 로그 라인 타이핑 효과 */
+@keyframes type-in {
+  from {
+    opacity:   0;
+    max-height: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity:   1;
+    max-height: 40px;
+    transform: translateX(0);
+  }
+}
+
+/* 부팅 로고 깜박임 (CRT 느낌) */
+@keyframes logo-flicker {
+  0%,96%,100% { opacity: 1; }
+  97%         { opacity: .85; }
+  98%         { opacity: 1; }
+  99%         { opacity: .7; }
+}
+
+/* 커서 블링크 (터미널 커서 확장 시) */
+@keyframes cursor-blink {
+  0%,100% { opacity: 1; }
+  50%     { opacity: 0; }
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   [4] AMBIENT — 배경 분위기 (성능 주의)
+   ══════════════════════════════════════════════════════════ */
+
+/* 스캔라인 스크롤 (boot.css::before 에 적용 가능) */
+@keyframes scanline-scroll {
+  from { background-position: 0 0; }
+  to   { background-position: 0 100px; }
+}
+
+/* 글로우 브리딩 (상태 점 등) */
+@keyframes glow-breathe {
+  0%,100% { box-shadow: 0 0 4px currentColor; }
+  50%     { box-shadow: 0 0 12px currentColor, 0 0 24px currentColor; }
+}
+
+/* 노이즈 흔들림 (통신 오청 distort) */
+@keyframes glitch-text {
+  0%,90%,100% { transform: translate(0,0); filter: blur(.4px); }
+  91%   { transform: translate(-2px, 1px); filter: blur(1px) hue-rotate(90deg); }
+  93%   { transform: translate(2px,-1px); filter: blur(.8px); }
+  95%   { transform: translate(-1px, 0px); filter: blur(.4px) hue-rotate(-40deg); }
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   [5] NOTIFICATION — 경고·배너
+   ══════════════════════════════════════════════════════════ */
+
+/* 통신 음영 경고 점멸 */
+@keyframes blink-warn {
+  0%,100% { opacity: 1; }
+  50%     { opacity: .45; }
+}
+
+/* 긴급 경보 (화면 경계 펄스 — 확장 예정) */
+@keyframes alert-border {
+  0%,100% { box-shadow: inset 0 0 0 0 rgba(255,59,59,0); }
+  50%     { box-shadow: inset 0 0 0 3px rgba(255,59,59,.5); }
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   [6] UTILITY — 재사용 헬퍼 클래스
+   필요한 요소에 class="animate-*" 추가하면 즉시 적용
+   ══════════════════════════════════════════════════════════ */
+
+.animate-fade-in {
+  animation: fade-in var(--dur-slow) var(--ease-out) both;
+}
+
+.animate-slide-in {
+  animation: slide-in var(--dur-mid) var(--ease-out) both;
+}
+
+.animate-drop-in {
+  animation: drop-in var(--dur-mid) var(--ease-out) both;
+}
+
+.animate-pulse-crit {
+  animation: pulse-crit 1s ease-in-out infinite;
+}
+
+.animate-glow-breathe {
+  animation: glow-breathe 2.5s ease-in-out infinite;
+}
+
+/* 지연 수식자 (stagger용) */
+.delay-1 { animation-delay: 80ms; }
+.delay-2 { animation-delay: 160ms; }
+.delay-3 { animation-delay: 240ms; }
+.delay-4 { animation-delay: 320ms; }
+.delay-5 { animation-delay: 400ms; }
+
+/* 접근성: 모션 감소 설정 존중 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration:   0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration:  0.01ms !important;
+  }
+}
