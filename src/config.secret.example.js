@@ -9,4 +9,4 @@
    ※ config.secret.js 가 없어도 게임은 정상 작동 (내장 AI 사용)
    ============================================================ */
 
-CONFIG.GEMINI_API_KEY = '';   // ← 여기에 키 입력: 'AIzaSy...'
+CONFIG.GEMINI_API_KEY = 'd';   // ← 여기에 키 입력: 'AIzaSy...'
