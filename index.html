@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIGNAL-FOG // 사지방 전술 시뮬레이터</title>
+
+  <!-- ── 폰트 ── -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet" />
+
+  <!-- ── CDN ── -->
+  <!-- Phaser.js 3.90.0 -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
+  <!-- Firebase App + Realtime DB (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+  <!-- Howler.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
+
+  <style>
+    /* ── CSS 변수 ── */
+    :root {
+      --col-bg:       #080c0a;
+      --col-surface:  #0d1410;
+      --col-border:   #1e3a28;
+      --col-grid:     rgba(30, 58, 40, 0.35);
+      --col-green:    #39ff8e;
+      --col-green-dim:#1e6644;
+      --col-amber:    #ffb84d;
+      --col-red:      #ff4444;
+      --col-text:     #c8e6c9;
+      --col-text-dim: #4a7c59;
+      --font-mono:    'Share Tech Mono', monospace;
+      --font-kr:      'Noto Sans KR', sans-serif;
+      --scan-speed:   6s;
+    }
+
+    /* ── 리셋 & 기반 ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--col-bg);
+      color: var(--col-text);
+      font-family: var(--font-mono);
+      overflow: hidden;
+      cursor: crosshair;
+    }
+
+    /* ── 스캔라인 오버레이 ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 9999;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,.18) 2px,
+        rgba(0,0,0,.18) 4px
+      );
+    }
+
+    /* ── 격자 배경 ── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(var(--col-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--col-grid) 1px, transparent 1px);
+      background-size: 40px 40px;
+      animation: gridDrift 120s linear infinite;
+    }
+
+    @keyframes gridDrift {
+      from { background-position: 0 0; }
+      to   { background-position: 40px 40px; }
+    }
+
+    /* ── 래퍼 ── */
+    #app-wrapper {
+      position: relative; z-index: 1;
+      width: 100vw; height: 100vh;
+      display: flex; flex-direction: column;
+    }
+
+    /* ─────────────────────────────────────────
+       HEADER
+    ───────────────────────────────────────── */
+    #header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 20px;
+      border-bottom: 1px solid var(--col-border);
+      background: rgba(8,12,10,.92);
+      flex-shrink: 0;
+    }
+
+    .header-title {
+      display: flex; align-items: baseline; gap: 12px;
+    }
+
+    .header-title h1 {
+      font-size: 1.35rem;
+      letter-spacing: .22em;
+      color: var(--col-green);
+      text-shadow: 0 0 12px rgba(57,255,142,.55);
+      animation: flicker 8s infinite;
+    }
+
+    @keyframes flicker {
+      0%,95%,100% { opacity: 1; }
+      96%          { opacity: .6; }
+      97%          { opacity: 1; }
+      98%          { opacity: .4; }
+    }
+
+    .header-title span {
+      font-size: .65rem;
+      color: var(--col-text-dim);
+      letter-spacing: .1em;
+    }
+
+    .header-status {
+      display: flex; gap: 20px; align-items: center;
+      font-size: .68rem; color: var(--col-text-dim);
+      letter-spacing: .05em;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--col-green);
+      box-shadow: 0 0 6px var(--col-green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .status-dot.amber { background: var(--col-amber); box-shadow: 0 0 6px var(--col-amber); }
+    .status-dot.red   { background: var(--col-red);   box-shadow: 0 0 6px var(--col-red); }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ─────────────────────────────────────────
+       MAIN LAYOUT  (3-column)
+    ───────────────────────────────────────── */
+    #main-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 220px 1fr 240px;
+      grid-template-rows: 1fr;
+      overflow: hidden;
+    }
+
+    /* ─────────────────────────────────────────
+       PANELS (공통)
+    ───────────────────────────────────────── */
+    .panel {
+      border: 1px solid var(--col-border);
+      background: rgba(13,20,16,.85);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-title {
+      padding: 6px 12px;
+      font-size: .6rem;
+      letter-spacing: .18em;
+      color: var(--col-green-dim);
+      border-bottom: 1px solid var(--col-border);
+      text-transform: uppercase;
+      background: rgba(30,58,40,.2);
+      flex-shrink: 0;
+    }
+
+    /* ─────────────────────────────────────────
+       LEFT PANEL — 플레이어 / 역할 / 스탯
+    ───────────────────────────────────────── */
+    #panel-left {
+      border-right: none;
+    }
+
+    .role-card {
+      padding: 14px 12px;
+      border-bottom: 1px solid var(--col-border);
+    }
+
+    .role-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      font-size: .58rem;
+      letter-spacing: .12em;
+      border: 1px solid var(--col-green);
+      color: var(--col-green);
+      margin-bottom: 8px;
+    }
+
+    .role-name {
+      font-size: .85rem;
+      color: var(--col-text);
+      letter-spacing: .05em;
+    }
+
+    .role-unit {
+      font-size: .62rem;
+      color: var(--col-text-dim);
+      margin-top: 3px;
+      font-family: var(--font-kr);
+    }
+
+    /* 생존 스탯 바 */
+    .stat-block { padding: 12px; border-bottom: 1px solid var(--col-border); }
+
+    .stat-row {
+      display: flex; align-items: center;
+      gap: 8px; margin-bottom: 9px;
+    }
+
+    .stat-label {
+      width: 48px; font-size: .58rem;
+      color: var(--col-text-dim); letter-spacing: .06em;
+      flex-shrink: 0;
+    }
+
+    .stat-bar {
+      flex: 1; height: 5px;
+      background: var(--col-border);
+      border-radius: 0;
+      overflow: hidden;
+    }
+
+    .stat-fill {
+      height: 100%;
+      background: var(--col-green);
+      box-shadow: 0 0 4px var(--col-green);
+      transition: width .6s ease;
+    }
+
+    .stat-fill.warn { background: var(--col-amber); box-shadow: 0 0 4px var(--col-amber); }
+    .stat-fill.crit { background: var(--col-red);   box-shadow: 0 0 4px var(--col-red); }
+
+    .stat-val {
+      width: 28px; font-size: .6rem;
+      color: var(--col-text-dim); text-align: right;
+    }
+
+    /* 배터리 & AP */
+    .resource-block {
+      padding: 10px 12px;
+      font-size: .62rem;
+      color: var(--col-text-dim);
+    }
+
+    .resource-row {
+      display: flex; justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .resource-val {
+      color: var(--col-green);
+      font-size: .75rem;
+    }
+
+    /* ─────────────────────────────────────────
+       CENTER — Phaser 캔버스 컨테이너
+    ───────────────────────────────────────── */
+    #game-canvas-container {
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+      background: #040604;
+      overflow: hidden;
+    }
+
+    /* 부팅 화면 (Phaser 로드 전) */
+    #boot-screen {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 18px;
+      z-index: 10;
+      background: #040604;
+    }
+
+    .boot-logo {
+      font-size: 3.2rem;
+      letter-spacing: .35em;
+      color: var(--col-green);
+      text-shadow: 0 0 30px rgba(57,255,142,.6), 0 0 60px rgba(57,255,142,.2);
+      animation: logoGlow 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes logoGlow {
+      from { text-shadow: 0 0 20px rgba(57,255,142,.4); }
+      to   { text-shadow: 0 0 50px rgba(57,255,142,.9), 0 0 100px rgba(57,255,142,.3); }
+    }
+
+    .boot-sub {
+      font-size: .68rem; letter-spacing: .22em;
+      color: var(--col-text-dim);
+    }
+
+    .boot-sub span { font-family: var(--font-kr); letter-spacing: .05em; }
+
+    /* 타이핑 로그 */
+    #boot-log {
+      font-size: .62rem;
+      color: var(--col-green-dim);
+      text-align: left;
+      width: 420px;
+      max-height: 120px;
+      overflow: hidden;
+      line-height: 1.7;
+    }
+
+    .log-line { opacity: 0; animation: logIn .15s forwards; }
+    @keyframes logIn { to { opacity: 1; } }
+
+    /* 진행 바 */
+    .boot-bar-wrap {
+      width: 420px; height: 3px;
+      background: var(--col-border);
+    }
+
+    #boot-bar {
+      height: 100%; width: 0%;
+      background: var(--col-green);
+      box-shadow: 0 0 8px var(--col-green);
+      transition: width .4s ease;
+    }
+
+    /* Phaser 캔버스 */
+    #game-canvas-container canvas {
+      display: block;
+      image-rendering: pixelated;
+    }
+
+    /* 턴 / 좌표 오버레이 */
+    #hud-overlay {
+      position: absolute;
+      top: 10px; left: 10px; right: 10px;
+      display: flex; justify-content: space-between;
+      pointer-events: none; z-index: 5;
+    }
+
+    .hud-chip {
+      background: rgba(8,12,10,.8);
+      border: 1px solid var(--col-border);
+      padding: 4px 10px;
+      font-size: .6rem; letter-spacing: .12em;
+      color: var(--col-text-dim);
+    }
+
+    .hud-chip .val { color: var(--col-green); }
+
+    /* ─────────────────────────────────────────
+       RIGHT PANEL — 채팅 / 로그
+    ───────────────────────────────────────── */
+    #panel-right {}
+
+    /* 채널 탭 */
+    .channel-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--col-border);
+      flex-shrink: 0;
+    }
+
+    .ch-tab {
+      flex: 1; padding: 5px 4px;
+      font-size: .55rem; letter-spacing: .1em;
+      color: var(--col-text-dim);
+      text-align: center;
+      cursor: pointer;
+      border-right: 1px solid var(--col-border);
+      transition: color .2s, background .2s;
+      user-select: none;
+    }
+
+    .ch-tab:last-child { border-right: none; }
+
+    .ch-tab.active {
+      color: var(--col-green);
+      background: rgba(57,255,142,.05);
+    }
+
+    .ch-tab:hover:not(.active) { color: var(--col-text); }
+
+    /* 로그 영역 */
+    #chat-log {
+      flex: 1; overflow-y: auto;
+      padding: 8px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--col-border) transparent;
+    }
+
+    .log-entry {
+      margin-bottom: 8px;
+      font-size: .6rem;
+      line-height: 1.5;
+      animation: fadeSlide .25s ease forwards;
+      opacity: 0;
+    }
+
+    @keyframes fadeSlide {
+      from { opacity:0; transform: translateX(6px); }
+      to   { opacity:1; transform: translateX(0); }
+    }
+
+    .log-time { color: var(--col-text-dim); margin-right: 4px; }
+
+    .log-sender {
+      color: var(--col-amber);
+      margin-right: 4px;
+    }
+
+    .log-text { color: var(--col-text); font-family: var(--font-kr); font-size: .6rem; }
+
+    .log-system {
+      color: var(--col-red);
+      letter-spacing: .08em;
+    }
+
+    .log-distort {
+      color: var(--col-green-dim);
+      font-style: italic;
+      position: relative;
+    }
+
+    /* 통신 오류 글리치 */
+    .log-distort::after {
+      content: attr(data-raw);
+      position: absolute; left: 0; top: 0;
+      color: var(--col-red);
+      opacity: .25;
+      clip-path: inset(30% 0 50% 0);
+      animation: glitch 2s infinite;
+    }
+
+    @keyframes glitch {
+      0%,90%    { clip-path: inset(30% 0 50% 0); transform: translateX(0); }
+      91%       { clip-path: inset(10% 0 60% 0); transform: translateX(-3px); }
+      93%       { clip-path: inset(50% 0 20% 0); transform: translateX(3px); }
+      95%,100%  { clip-path: inset(30% 0 50% 0); transform: translateX(0); }
+    }
+
+    /* 채팅 입력 */
+    #chat-input-area {
+      display: flex;
+      border-top: 1px solid var(--col-border);
+      flex-shrink: 0;
+    }
+
+    #chat-input {
+      flex: 1; padding: 7px 10px;
+      background: transparent;
+      border: none; outline: none;
+      color: var(--col-text);
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      caret-color: var(--col-green);
+    }
+
+    #chat-input::placeholder { color: var(--col-text-dim); }
+
+    #chat-send {
+      padding: 7px 12px;
+      background: transparent;
+      border: none;
+      border-left: 1px solid var(--col-border);
+      color: var(--col-green-dim);
+      font-family: var(--font-mono);
+      font-size: .62rem;
+      cursor: pointer;
+      letter-spacing: .06em;
+      transition: color .2s, background .2s;
+    }
+
+    #chat-send:hover {
+      color: var(--col-green);
+      background: rgba(57,255,142,.06);
+    }
+
+    /* ─────────────────────────────────────────
+       FOOTER — 턴 타이머 & 액션
+    ───────────────────────────────────────── */
+    #footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 20px;
+      border-top: 1px solid var(--col-border);
+      background: rgba(8,12,10,.92);
+      flex-shrink: 0;
+      gap: 16px;
+    }
+
+    /* 타이머 */
+    .turn-timer-wrap {
+      display: flex; align-items: center; gap: 10px;
+    }
+
+    .turn-label {
+      font-size: .6rem; letter-spacing: .14em;
+      color: var(--col-text-dim);
+    }
+
+    #turn-timer {
+      font-size: 1.3rem;
+      color: var(--col-green);
+      text-shadow: 0 0 10px rgba(57,255,142,.5);
+      min-width: 40px;
+      text-align: center;
+    }
+
+    #turn-timer.warn { color: var(--col-amber); text-shadow: 0 0 10px rgba(255,184,77,.5); }
+    #turn-timer.crit { color: var(--col-red);   text-shadow: 0 0 10px rgba(255,68,68,.7);
+                       animation: timerPulse .5s ease-in-out infinite; }
+
+    @keyframes timerPulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+    /* 타이머 바 */
+    .timer-bar-wrap {
+      width: 120px; height: 3px;
+      background: var(--col-border);
+    }
+
+    #timer-bar {
+      height: 100%; width: 100%;
+      background: var(--col-green);
+      transition: width 1s linear, background .5s;
+    }
+
+    /* 액션 버튼들 */
+    .action-buttons { display: flex; gap: 8px; }
+
+    .btn {
+      padding: 6px 16px;
+      background: transparent;
+      border: 1px solid var(--col-border);
+      color: var(--col-text-dim);
+      font-family: var(--font-mono);
+      font-size: .62rem;
+      letter-spacing: .1em;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all .2s;
+    }
+
+    .btn:hover {
+      border-color: var(--col-green);
+      color: var(--col-green);
+      background: rgba(57,255,142,.06);
+      box-shadow: 0 0 10px rgba(57,255,142,.12);
+    }
+
+    .btn.primary {
+      border-color: var(--col-green);
+      color: var(--col-green);
+    }
+
+    .btn.primary:hover {
+      background: rgba(57,255,142,.15);
+      box-shadow: 0 0 16px rgba(57,255,142,.25);
+    }
+
+    .btn.danger { border-color: var(--col-red); color: var(--col-red); }
+    .btn.danger:hover { background: rgba(255,68,68,.08); }
+
+    /* 상태 텍스트 */
+    .footer-status {
+      font-size: .58rem;
+      color: var(--col-text-dim);
+      letter-spacing: .08em;
+      flex: 1;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+<div id="app-wrapper">
+
+  <!-- ── HEADER ── -->
+  <header id="header">
+    <div class="header-title">
+      <h1>SIGNAL-FOG</h1>
+      <span>KCTC 과학화전투 시뮬레이터 // v0.1 ALPHA</span>
+    </div>
+    <div class="header-status">
+      <span><span class="status-dot"></span> FIREBASE</span>
+      <span><span class="status-dot amber"></span> SYNC</span>
+      <span><span class="status-dot red"></span> ROOM</span>
+      <span id="clock" style="color:var(--col-green);letter-spacing:.1em;"></span>
+    </div>
+  </header>
+
+  <!-- ── MAIN LAYOUT ── -->
+  <div id="main-layout">
+
+    <!-- ── LEFT PANEL ── -->
+    <aside class="panel" id="panel-left">
+      <div class="panel-title">▸ 병사 현황</div>
+
+      <div class="role-card">
+        <div class="role-badge">BLUE FORCE</div>
+        <div class="role-name">홍길동 상병</div>
+        <div class="role-unit">3중대 2소대 1분대 — 소총수</div>
+      </div>
+
+      <div class="stat-block">
+        <div class="panel-title" style="border:none;padding:0 0 8px 0;font-size:.55rem;">SURVIVAL STATS</div>
+        <div class="stat-row">
+          <div class="stat-label">피로도</div>
+          <div class="stat-bar"><div class="stat-fill warn" style="width:42%"></div></div>
+          <div class="stat-val">42</div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-label">배고픔</div>
+          <div class="stat-bar"><div class="stat-fill" style="width:78%"></div></div>
+          <div class="stat-val">78</div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-label">수면</div>
+          <div class="stat-bar"><div class="stat-fill crit" style="width:18%"></div></div>
+          <div class="stat-val">18</div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-label">체력</div>
+          <div class="stat-bar"><div class="stat-fill" style="width:91%"></div></div>
+          <div class="stat-val">91</div>
+        </div>
+      </div>
+
+      <div class="resource-block">
+        <div class="resource-row">
+          <span>무전기 배터리</span>
+          <span class="resource-val">73%</span>
+        </div>
+        <div class="resource-row">
+          <span>탄약</span>
+          <span class="resource-val">180 / 210</span>
+        </div>
+        <div class="resource-row">
+          <span>AP (행동력)</span>
+          <span class="resource-val" style="color:var(--col-amber);">2 / 4</span>
+        </div>
+        <div class="resource-row">
+          <span>현재 지형</span>
+          <span class="resource-val" style="color:var(--col-text-dim);">계곡</span>
+        </div>
+        <div class="resource-row" style="color:var(--col-red);font-size:.58rem;margin-top:4px;">
+          ⚠ 통신 음영 구역
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── CENTER (Phaser 캔버스) ── -->
+    <div id="game-canvas-container">
+
+      <!-- 부팅 화면 -->
+      <div id="boot-screen">
+        <div class="boot-logo">SIGNAL<br>FOG</div>
+        <div class="boot-sub">
+          <span>육군창업경진대회 2026 // 팀 LNG</span>
+        </div>
+        <div id="boot-log"></div>
+        <div class="boot-bar-wrap">
+          <div id="boot-bar"></div>
+        </div>
+      </div>
+
+      <!-- HUD 오버레이 (캔버스 위) -->
+      <div id="hud-overlay">
+        <div class="hud-chip">TURN <span class="val" id="hud-turn">01</span></div>
+        <div class="hud-chip">GRID <span class="val" id="hud-coord">E-07</span></div>
+        <div class="hud-chip">PHASE <span class="val">입력</span></div>
+      </div>
+
+    </div>
+
+    <!-- ── RIGHT PANEL ── -->
+    <aside class="panel" id="panel-right">
+      <div class="panel-title">▸ 통신 채널</div>
+
+      <div class="channel-tabs">
+        <div class="ch-tab active" onclick="switchChannel(this,'지휘')">지휘</div>
+        <div class="ch-tab" onclick="switchChannel(this,'소대')">소대</div>
+        <div class="ch-tab" onclick="switchChannel(this,'분대')">분대</div>
+        <div class="ch-tab" onclick="switchChannel(this,'LOG')">LOG</div>
+      </div>
+
+      <div id="chat-log">
+        <!-- 예시 로그 (JS에서 동적 생성) -->
+      </div>
+
+      <div id="chat-input-area">
+        <input id="chat-input" type="text" placeholder="무전 내용 입력 / SEND" maxlength="80" />
+        <button id="chat-send" onclick="sendChat()">SEND</button>
+      </div>
+    </aside>
+
+  </div><!-- /main-layout -->
+
+  <!-- ── FOOTER ── -->
+  <footer id="footer">
+    <div class="turn-timer-wrap">
+      <div class="turn-label">TURN INPUT</div>
+      <div id="turn-timer">60</div>
+      <div class="timer-bar-wrap">
+        <div id="timer-bar"></div>
+      </div>
+    </div>
+
+    <div class="footer-status" id="footer-status">
+      대기 중 — 모든 플레이어 입력 완료 시 자동 실행
+    </div>
+
+    <div class="action-buttons">
+      <button class="btn" onclick="holdAction()">HOLD</button>
+      <button class="btn primary" onclick="confirmTurn()">CONFIRM</button>
+      <button class="btn danger" onclick="surrenderAction()">항복</button>
+    </div>
+  </footer>
+
+</div><!-- /app-wrapper -->
+
+<!-- ── 게임 스크립트 ── -->
+<script>
+  /* ────────────────────────────────
+     BOOT SEQUENCE
+  ──────────────────────────────── */
+  const BOOT_LINES = [
+    '> SIGNAL-FOG v0.1 초기화 중...',
+    '> Phaser.js 3.90.0 로드 완료',
+    '> Firebase SDK 연결 대기...',
+    '> Howler.js 사운드 엔진 활성화',
+    '> 헥스 그리드 모듈 로드 중...',
+    '> TensorFlow.js 봇 엔진 준비',
+    '> Firebase Realtime DB 연결...',
+    '> 사지방 네트워크 환경 감지',
+    '> 로비 씬 진입 준비 완료',
+    '> 전술 시뮬레이터 시작',
+  ];
+
+  let bootIdx = 0;
+  const bootLog  = document.getElementById('boot-log');
+  const bootBar  = document.getElementById('boot-bar');
+  const bootScr  = document.getElementById('boot-screen');
+
+  function bootStep() {
+    if (bootIdx >= BOOT_LINES.length) {
+      setTimeout(() => {
+        bootScr.style.transition = 'opacity .6s';
+        bootScr.style.opacity = '0';
+        setTimeout(() => { bootScr.style.display = 'none'; initGame(); }, 650);
+      }, 400);
+      return;
+    }
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.textContent = BOOT_LINES[bootIdx];
+    line.style.animationDelay = '0s';
+    bootLog.appendChild(line);
+
+    bootIdx++;
+    bootBar.style.width = (bootIdx / BOOT_LINES.length * 100) + '%';
+    setTimeout(bootStep, 220 + Math.random() * 180);
+  }
+
+  window.addEventListener('load', () => setTimeout(bootStep, 600));
+
+  /* ────────────────────────────────
+     CLOCK
+  ──────────────────────────────── */
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      String(now.getHours()).padStart(2,'0') + ':' +
+      String(now.getMinutes()).padStart(2,'0') + ':' +
+      String(now.getSeconds()).padStart(2,'0') + ' KST';
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  /* ────────────────────────────────
+     TURN TIMER
+  ──────────────────────────────── */
+  const TURN_SEC = 60;
+  let turnRemain = TURN_SEC;
+  let timerInterval = null;
+
+  function startTurnTimer() {
+    clearInterval(timerInterval);
+    turnRemain = TURN_SEC;
+    updateTimerUI();
+    timerInterval = setInterval(() => {
+      turnRemain--;
+      updateTimerUI();
+      if (turnRemain <= 0) { clearInterval(timerInterval); autoConfirm(); }
+    }, 1000);
+  }
+
+  function updateTimerUI() {
+    const el  = document.getElementById('turn-timer');
+    const bar = document.getElementById('timer-bar');
+    el.textContent = turnRemain;
+    bar.style.width = (turnRemain / TURN_SEC * 100) + '%';
+    el.className = '';
+    if (turnRemain <= 10) {
+      el.classList.add('crit');
+      bar.style.background = 'var(--col-red)';
+    } else if (turnRemain <= 20) {
+      el.classList.add('warn');
+      bar.style.background = 'var(--col-amber)';
+    } else {
+      bar.style.background = 'var(--col-green)';
+    }
+  }
+
+  function autoConfirm() {
+    setStatus('⚠ 시간 초과 — 자동 HOLD 처리됨');
+    addLog('SYSTEM', null, '입력 시간 초과 → 자동 대기(HOLD) 처리', 'system');
+  }
+
+  /* ────────────────────────────────
+     CHAT / LOG
+  ──────────────────────────────── */
+  const chatLog = document.getElementById('chat-log');
+
+  function addLog(sender, time, text, type = '') {
+    const t  = time || new Date().toTimeString().slice(0,5);
+    const el = document.createElement('div');
+    el.className = 'log-entry';
+    if (type === 'system') {
+      el.innerHTML = `<span class="log-time">[${t}]</span><span class="log-system">${text}</span>`;
+    } else if (type === 'distort') {
+      el.innerHTML = `<span class="log-time">[${t}]</span><span class="log-sender">${sender}</span><span class="log-distort" data-raw="${text}">${text}</span>`;
+    } else {
+      el.innerHTML = `<span class="log-time">[${t}]</span><span class="log-sender">${sender}</span><span class="log-text">${text}</span>`;
+    }
+    el.style.animationDelay = '0s';
+    chatLog.appendChild(el);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  function sendChat() {
+    const input = document.getElementById('chat-input');
+    const text  = input.value.trim();
+    if (!text) return;
+    addLog('나 >', null, text);
+    input.value = '';
+  }
+
+  document.getElementById('chat-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendChat();
+  });
+
+  function switchChannel(tab, name) {
+    document.querySelectorAll('.ch-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    addLog('SYSTEM', null, `채널 전환 → [${name}]`, 'system');
+  }
+
+  /* ────────────────────────────────
+     FOOTER ACTIONS
+  ──────────────────────────────── */
+  function setStatus(msg) {
+    document.getElementById('footer-status').textContent = msg;
+  }
+
+  function holdAction()      { addLog('SYSTEM', null, '행동 → HOLD (대기)', 'system'); setStatus('HOLD 선택됨 — 턴 종료 대기'); }
+  function confirmTurn()     { addLog('SYSTEM', null, '입력 확정 — 실행 대기 중', 'system'); setStatus('입력 확정 완료'); clearInterval(timerInterval); }
+  function surrenderAction() { addLog('SYSTEM', null, '⚠ 항복 신호 송신됨', 'system'); setStatus('항복 처리 중...'); }
+
+  /* ────────────────────────────────
+     PHASER INIT (부팅 후 호출)
+  ──────────────────────────────── */
+  function initGame() {
+    /* TODO: Firebase 초기화
+    firebase.initializeApp({ ... });
+    */
+
+    const config = {
+      type: Phaser.AUTO,
+      parent: 'game-canvas-container',
+      backgroundColor: '#040604',
+      scale: {
+        mode: Phaser.Scale.RESIZE,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+      },
+      scene: {
+        create() {
+          // ── 임시 플레이스홀더 ──
+          const { width, height } = this.scale;
+          this.add.text(width / 2, height / 2,
+            '[ HEX MAP LOADING... ]\n20×20 헥스 그리드 초기화 대기',
+            {
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: '14px',
+              color: '#1e6644',
+              align: 'center',
+            }
+          ).setOrigin(0.5);
+
+          // 좌표 업데이트 (마우스 추적 예시)
+          this.input.on('pointermove', (ptr) => {
+            const gx = String.fromCharCode(65 + Math.floor(ptr.x / 40));
+            const gy = String(Math.floor(ptr.y / 40) + 1).padStart(2,'0');
+            document.getElementById('hud-coord').textContent = `${gx}-${gy}`;
+          });
+        }
+      }
+    };
+
+    window.phaserGame = new Phaser.Game(config);
+
+    // 부팅 완료 로그 & 타이머 시작
+    addLog('SYSTEM', null, 'Signal-Fog 초기화 완료 — 로비 대기 중', 'system');
+    addLog('OC/T',   null, '훈련 시작 준비. 역할 배정 후 입장하십시오.', '');
+    addLog('대항군', null, '███ ████ ██ ████████...', 'distort');  // 통신 오류 예시
+    startTurnTimer();
+    setStatus('로비 — 역할 배정 대기 중');
+  }
+</script>
+</body>
+</html>
