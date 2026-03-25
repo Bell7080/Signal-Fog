@@ -13,8 +13,8 @@ class GridMap {
     this._tileMeshes = [];           // 레이캐스팅용 투명 평면
     this._highlights = [];           // 활성 하이라이트 메시
 
-    // 타일 1칸 = 1.5 Three.js 단위, 그리드 원점 중앙 정렬
-    this.TILE_W   = 1.5;
+    // 타일 1칸 = 1.2 Three.js 단위 (약 50m/타일), 그리드 원점 중앙 정렬
+    this.TILE_W   = 1.2;
     this.OFFSET_X = this.TILE_W * (0.5 - this.cols / 2);
     this.OFFSET_Z = this.TILE_W * (0.5 - this.rows / 2);
   }

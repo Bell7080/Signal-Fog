@@ -93,15 +93,25 @@ class TurnManager {
     this.scene._syncPanel();
   }
 
-  /* ── 적군 행동 (FallbackAI) ── */
+  /* ── 적군 행동 (Gemini AI → FallbackAI 자동 전환) ── */
   async _executeEnemy() {
     const allySquads  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
     const enemySquads = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
 
     if (enemySquads.length === 0) return;
 
-    // FallbackAI 우선 (Gemini는 API 키 설정 후 EnemyAI.decideTurn으로 교체)
-    const actions = this.scene.enemyAI.fallback.decide(enemySquads, allySquads);
+    // 아군 평균 통신 품질 계산
+    const avgComms = allySquads.length > 0
+      ? Math.round(allySquads.reduce((sum, s) => sum + this.scene._quality(s), 0) / allySquads.length)
+      : 100;
+
+    // 맵 상태 직렬화
+    const mapState = this.scene.enemyAI.serializeMap(
+      this.scene.gridMap, allySquads, enemySquads, avgComms
+    );
+
+    // AI 결정 (Gemini 성공 시 전술적 판단, 실패 시 FallbackAI)
+    const actions = await this.scene.enemyAI.decideTurn(mapState);
 
     for (const action of actions) {
       const squad = this.scene.squads.find(s => s.id === action.squadId);
@@ -114,8 +124,12 @@ class TurnManager {
           await this._wait(100);
         }
       } else if (action.action === 'attack') {
-        const targetId = parseInt(action.targetId.replace('ally_', ''));
-        const target   = this.scene.squads.find(s => s.id === targetId);
+        // targetId는 숫자 또는 'ally_N' 형식 모두 수용
+        const rawId  = action.targetId;
+        const targetId = typeof rawId === 'number'
+          ? rawId
+          : parseInt(String(rawId).replace('ally_', ''));
+        const target = this.scene.squads.find(s => s.id === targetId);
         if (target && target.alive) {
           this.scene.applyHit(squad, target);
           await this._wait(320);
@@ -163,8 +177,9 @@ class TurnManager {
     const obj   = DEMO_OBJECTIVE;
     const onObj = allyAlive.find(s => s.pos.col === obj.col && s.pos.row === obj.row);
     if (onObj) {
+      const objLabel = `${String.fromCharCode(65 + obj.col)}-${String(obj.row + 1).padStart(2,'0')}`;
       chatUI.addLog('SYSTEM', null,
-        `A${onObj.id}분대 목표 지점(D-04) 점령 중 — ${CONFIG.CAPTURE_HOLD_TURNS}턴 유지 시 승리`, 'system');
+        `A${onObj.id}분대 목표 지점(${objLabel}) 점령 중 — ${CONFIG.CAPTURE_HOLD_TURNS}턴 유지 시 승리`, 'system');
     }
 
     this._nextTurn();
