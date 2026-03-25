@@ -1,0 +1,24 @@
+#!/bin/sh
+# pre-commit 훅 — API 키 유출 방지
+# 설치: cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+# 1. config.secret.js 가 스테이징되어 있으면 차단
+if git diff --cached --name-only | grep -q 'config\.secret\.js'; then
+  echo ""
+  echo "  ██ 커밋 차단: src/config.secret.js 가 스테이징됨"
+  echo "  API 키가 포함된 파일은 절대 커밋하지 마십시오."
+  echo "  해제: git reset HEAD src/config.secret.js"
+  echo ""
+  exit 1
+fi
+
+# 2. 스테이징된 파일 전체에서 Google API 키 패턴 검사
+if git diff --cached | grep -E 'AIzaSy[A-Za-z0-9_-]{30,}' > /dev/null 2>&1; then
+  echo ""
+  echo "  ██ 커밋 차단: Google API 키 패턴이 감지되었습니다"
+  echo "  키를 코드에서 제거한 뒤 다시 커밋하십시오."
+  echo ""
+  exit 1
+fi
+
+exit 0
