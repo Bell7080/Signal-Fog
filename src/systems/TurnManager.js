@@ -13,7 +13,14 @@ class TurnManager {
 
   /* ── INPUT 페이즈 시작 ── */
   startInputPhase() {
-    this.scene.phase         = 'INPUT';
+    this.scene.phase = 'INPUT';
+
+    // 선택 분대 스케일 리셋
+    if (this.scene.selectedSquad) {
+      const prev = this.scene.selectedSquad;
+      if (prev.mat)  { prev.mat.emissive = new THREE.Color(0x000000); prev.mat.opacity = 0.90; }
+      if (prev.mesh) { prev.mesh.scale.set(1, 1, 1); }
+    }
     this.scene.selectedSquad = null;
     this.scene.pendingCmds   = [];
     this.scene.gridMap.clearHighlights();

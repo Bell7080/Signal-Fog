@@ -236,13 +236,22 @@ class GameScene {
   selectSquad(squad) {
     if (this.phase !== 'INPUT' || !squad.alive) return;
 
-    // 이전 선택 해제
-    if (this.selectedSquad && this.selectedSquad.mat) {
-      this.selectedSquad.mat.emissive = new THREE.Color(0x000000);
+    // 이전 선택 해제 (원래 크기 + 발광 끔)
+    if (this.selectedSquad && this.selectedSquad.mesh) {
+      if (this.selectedSquad.mat) {
+        this.selectedSquad.mat.emissive = new THREE.Color(0x000000);
+        this.selectedSquad.mat.opacity  = 0.90;
+      }
+      this.selectedSquad.mesh.scale.set(1, 1, 1);
     }
 
     this.selectedSquad = squad;
-    squad.mat.emissive = new THREE.Color(0x224422);
+
+    // 선택 분대 강조: 밝은 발광 + 1.2× 스케일
+    squad.mat.emissive = new THREE.Color(squad.side === 'ally' ? 0x1a7740 : 0x882222);
+    squad.mat.opacity  = 1.0;
+    squad.mesh.scale.set(1.2, 1.2, 1.2);
+
     this.gridMap.clearHighlights();
     this._showMoveTargets(squad);
     this._syncPanel();
@@ -309,6 +318,14 @@ class GameScene {
     this.pendingCmds.push({ type: 'move', squadId: squad.id, targetPos: finalPos });
     squad.ap -= cost;
 
+    // 명령 확정 → 선택 해제
+    if (this.selectedSquad?.mat) {
+      this.selectedSquad.mat.emissive = new THREE.Color(0x000000);
+      this.selectedSquad.mat.opacity  = 0.90;
+      this.selectedSquad.mesh.scale.set(1, 1, 1);
+    }
+    this.selectedSquad = null;
+
     this.gridMap.clearHighlights();
     this.gridMap.highlightTile(finalPos.col, finalPos.row, 0x39ff8e, 0.50);
 
@@ -332,6 +349,14 @@ class GameScene {
     this._cancelCmd(squad);
     this.pendingCmds.push({ type: 'attack', squadId: squad.id, targetId: target.id });
     squad.ap -= 1;
+
+    // 명령 확정 → 선택 해제
+    if (this.selectedSquad?.mat) {
+      this.selectedSquad.mat.emissive = new THREE.Color(0x000000);
+      this.selectedSquad.mat.opacity  = 0.90;
+      this.selectedSquad.mesh.scale.set(1, 1, 1);
+    }
+    this.selectedSquad = null;
 
     this.gridMap.clearHighlights();
     this.gridMap.highlightTile(target.pos.col, target.pos.row, 0xff4444, 0.50);
@@ -494,36 +519,62 @@ class GameScene {
 
   _onCanvasClick(e) {
     if (this.phase !== 'INPUT') return;
-    const hit = this._raycastTile(e);
-    if (!hit) return;
-    const { col, row } = hit;
+    const mouse = this._toNDC(e);
+    this.raycaster.setFromCamera(mouse, this.camera);
 
-    // 아군 클릭 → 선택
-    const ally = this.squads.find(
+    // ① 분대 메시 우선 레이캐스트 (Group 자식 포함)
+    const aliveMeshes = this.squads
+      .filter(s => s.alive && s.mesh)
+      .map(s => s.mesh);
+    const squadHits = this.raycaster.intersectObjects(aliveMeshes, true);
+    if (squadHits.length > 0) {
+      // 부모 Group의 squadId를 탐색
+      let obj = squadHits[0].object;
+      while (obj && obj.userData.squadId === undefined && obj.parent) {
+        obj = obj.parent;
+      }
+      const squadId = obj && obj.userData.squadId;
+      if (squadId !== undefined) {
+        const clicked = this.squads.find(s => s.id === squadId && s.alive);
+        if (clicked) {
+          if (clicked.side === 'ally') { this.selectSquad(clicked); return; }
+          if (this.selectedSquad)      { this._issueAttack(this.selectedSquad, clicked); return; }
+        }
+      }
+    }
+
+    // ② 타일 평면 레이캐스트 (빈 타일 이동 or 위치 기반 적 선택)
+    const tileHits = this.raycaster.intersectObjects(this.gridMap.getTileMeshes());
+    if (tileHits.length === 0) return;
+    const { col, row } = tileHits[0].object.userData;
+
+    // 타일 좌표로 분대 재확인 (분대 박스가 가려진 경우 보완)
+    const allyOnTile = this.squads.find(
       q => q.side === 'ally' && q.alive && q.pos.col === col && q.pos.row === row
     );
-    if (ally) { this.selectSquad(ally); return; }
+    if (allyOnTile) { this.selectSquad(allyOnTile); return; }
 
     if (!this.selectedSquad) return;
 
-    // 적군 클릭 → 공격 명령
-    const enemy = this.squads.find(
+    const enemyOnTile = this.squads.find(
       q => q.side === 'enemy' && q.alive && q.pos.col === col && q.pos.row === row
     );
-    if (enemy) { this._issueAttack(this.selectedSquad, enemy); return; }
+    if (enemyOnTile) { this._issueAttack(this.selectedSquad, enemyOnTile); return; }
 
-    // 빈 타일 → 이동 명령
     this._issueMove(this.selectedSquad, { col, row });
   }
 
-  _raycastTile(e) {
-    const canvas = this.renderer.domElement;
-    const rect   = canvas.getBoundingClientRect();
-    const mouse  = new THREE.Vector2(
+  /** 마우스 이벤트 → NDC [-1,1] 변환 */
+  _toNDC(e) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return new THREE.Vector2(
       ((e.clientX - rect.left) / rect.width)  *  2 - 1,
       ((e.clientY - rect.top)  / rect.height) * -2 + 1
     );
-    this.raycaster.setFromCamera(mouse, this.camera);
+  }
+
+  _raycastTile(e) {
+    this.raycaster.setFromCamera(this._toNDC(e), this.camera);
     const hits = this.raycaster.intersectObjects(this.gridMap.getTileMeshes());
     if (hits.length === 0) return null;
     const { col, row } = hits[0].object.userData;
