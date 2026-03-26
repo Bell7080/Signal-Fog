@@ -1,30 +1,24 @@
 /* ============================================================
    GameScene.js — Three.js 3D 메인 게임 씬
-   겹침 개선:
-     · 아군 분대마다 고유 색상 (A1=녹색, A2=청록, A3=노랑)
-     · 겹칠 때 오프셋 0.38로 넓혀 유닛이 명확히 분리
-     · 라벨 스프라이트에 유색 배경 패널 추가 → 겹쳐도 구분 즉시 가능
-     · 타일 클릭 시 DOM 피커 팝업 → 어느 분대를 움직일지 선택
    ============================================================ */
 
 /* ── 분대별 고유 색상 정의 ── */
 const ALLY_COLOR_DEFS = [
-  { hex: 0x39ff8e, css: '#39ff8e', bg: 'rgba(5,40,18,0.94)',  emissive: 0x1a7740 }, // A1 녹색
-  { hex: 0x38d9f5, css: '#38d9f5', bg: 'rgba(3,28,40,0.94)',  emissive: 0x0d5566 }, // A2 청록
-  { hex: 0xf5e030, css: '#f5e030', bg: 'rgba(36,30,2,0.94)',  emissive: 0x665800 }, // A3 노랑
-  { hex: 0xff8c40, css: '#ff8c40', bg: 'rgba(40,14,4,0.94)',  emissive: 0x662000 }, // A4 오렌지
-  { hex: 0xcc80ff, css: '#cc80ff', bg: 'rgba(28,8,40,0.94)',  emissive: 0x440066 }, // A5 보라
+  { hex: 0x39ff8e, css: '#39ff8e', bg: 'rgba(5,40,18,0.94)',  emissive: 0x1a7740 },
+  { hex: 0x38d9f5, css: '#38d9f5', bg: 'rgba(3,28,40,0.94)',  emissive: 0x0d5566 },
+  { hex: 0xf5e030, css: '#f5e030', bg: 'rgba(36,30,2,0.94)',  emissive: 0x665800 },
+  { hex: 0xff8c40, css: '#ff8c40', bg: 'rgba(40,14,4,0.94)',  emissive: 0x662000 },
+  { hex: 0xcc80ff, css: '#cc80ff', bg: 'rgba(28,8,40,0.94)',  emissive: 0x440066 },
 ];
 const ENEMY_COLOR_DEF = { hex: 0xff4444, css: '#ff4444', bg: 'rgba(40,4,4,0.94)', emissive: 0x882222 };
 
-/* ── 유닛 라벨: 배경 패널 + 테두리 + 텍스트 ── */
+/* ── 유닛 라벨 스프라이트 ── */
 function _makeSquadLabelSprite(text, textCss, bgCss) {
   const W = 160, H = 72;
   const cv  = document.createElement('canvas');
   cv.width  = W; cv.height = H;
   const ctx = cv.getContext('2d');
 
-  // 배경 라운드 rect
   const r = 14;
   ctx.fillStyle = bgCss;
   ctx.beginPath();
@@ -35,12 +29,10 @@ function _makeSquadLabelSprite(text, textCss, bgCss) {
   ctx.arcTo(0, 0, r, 0, r); ctx.closePath();
   ctx.fill();
 
-  // 테두리
   ctx.strokeStyle = textCss;
   ctx.lineWidth   = 4;
   ctx.stroke();
 
-  // 텍스트
   ctx.fillStyle    = textCss;
   ctx.font         = 'bold 40px "Share Tech Mono", monospace';
   ctx.textAlign    = 'center';
@@ -52,7 +44,7 @@ function _makeSquadLabelSprite(text, textCss, bgCss) {
   return new THREE.Sprite(mat);
 }
 
-/* ── 일반 텍스트 스프라이트 (좌표 레이블 등) ── */
+/* ── 일반 텍스트 스프라이트 ── */
 function _makeTextSprite(text, color = '#39ff8e') {
   const cv  = document.createElement('canvas');
   cv.width  = 128; cv.height = 64;
@@ -245,7 +237,6 @@ class GameScene {
     edgeLines.raycast = () => {};
     group.add(edgeLines);
 
-    // 배경 패널 라벨 — 겹쳐도 색으로 즉시 구분
     const sprite = _makeSquadLabelSprite(label, cd.css, cd.bg);
     sprite.position.set(0, 0.62, 0);
     sprite.scale.set(0.90, 0.41, 1);
@@ -298,7 +289,6 @@ class GameScene {
       } else {
         const off = this._calcOffsets(list.length);
         list.forEach((s, i) => s.mesh.position.set(base.x + off[i].dx, base.y, base.z + off[i].dz));
-        // 겹침 뱃지
         const badge = _makeTextSprite(`×${list.length}`, '#ffb84d');
         badge.position.set(base.x, base.y + 1.05, base.z);
         badge.scale.set(0.55, 0.30, 1);
@@ -319,13 +309,11 @@ class GameScene {
     const col   = squads[0].pos.col, row = squads[0].pos.row;
     const coord = `${String.fromCharCode(65+col)}-${String(row+1).padStart(2,'0')}`;
 
-    // 타이틀
     const title = document.createElement('div');
     title.className = 'picker-title';
     title.innerHTML = `<span class="picker-icon">⚡</span> ${coord} 겹침 — 분대 선택`;
     picker.appendChild(title);
 
-    // 분대 카드
     squads.forEach((squad) => {
       const cd     = squad._colDef || this._squadColor(squad);
       const q      = this._quality(squad);
@@ -356,14 +344,12 @@ class GameScene {
       picker.appendChild(card);
     });
 
-    // 닫기
     const closeBtn = document.createElement('div');
     closeBtn.className = 'picker-close';
     closeBtn.innerHTML = '✕&nbsp;&nbsp;닫기';
     closeBtn.addEventListener('click', (e) => { e.stopPropagation(); this._hideSquadPicker(); });
     picker.appendChild(closeBtn);
 
-    // 위치 클램프
     const rect = this.container.getBoundingClientRect();
     const PW = 224, PH = 48 + squads.length * 76 + 38;
     picker.style.left    = Math.min(clientX - rect.left + 14, rect.width  - PW - 6) + 'px';
@@ -423,38 +409,20 @@ class GameScene {
       if (this.combat.inRange(squad.pos, e.pos)) this.gridMap.highlightTile(e.pos.col, e.pos.row, 0xff4444, 0.38);
   }
 
-  /* ────────── 명령 ────────── */
+  /* ────────── 선택 해제 공통 헬퍼 ────────── */
 
-  _issueMove(squad, targetPos) {
-    const dist = Math.abs(targetPos.col-squad.pos.col) + Math.abs(targetPos.row-squad.pos.row);
-    if (dist === 0) return;
-    const cost = this.gridMap.tiles[targetPos.row][targetPos.col].terrain.moveCost || 1;
-    if (cost > squad.ap) { chatUI.addLog('SYSTEM',null,`AP 부족(필요:${cost},보유:${squad.ap})`,'system'); return; }
-    if (dist > squad.ap) { chatUI.addLog('SYSTEM',null,`이동 거리 초과(거리:${dist},AP:${squad.ap})`,'system'); return; }
-
-    this._cancelCmd(squad);
-    let finalPos = targetPos;
-    if (this.comms.rollMishear(this._quality(squad))) {
-      const res = this.comms.applyMishear({ type:'move', squadId:squad.id, targetTile:targetPos });
-      if (res.distorted) { finalPos = res.command.targetTile; chatUI.showMishear(res.originalText, res.distortedText); }
+  _clearSelection() {
+    if (this.selectedSquad?.mat) {
+      this.selectedSquad.mat.emissive = new THREE.Color(0);
+      this.selectedSquad.mat.opacity  = 0.90;
+      this.selectedSquad.mesh.scale.set(1, 1, 1);
     }
-    this.pendingCmds.push({ type:'move', squadId:squad.id, targetPos:finalPos });
-    squad.ap -= cost;
-
-    const future = this._getSquadsOnTile(finalPos.col, finalPos.row, 'ally');
-    if (future.length > 0) {
-      const coord = `${String.fromCharCode(65+finalPos.col)}-${String(finalPos.row+1).padStart(2,'0')}`;
-      chatUI.addLog('SYSTEM',null,`⚠ A${squad.id}→${coord} 겹침 예정(A${future.map(s=>s.id).join('/')})`,'system');
-    }
-
-    if (this.selectedSquad?.mat) { this.selectedSquad.mat.emissive = new THREE.Color(0); this.selectedSquad.mat.opacity = 0.90; this.selectedSquad.mesh.scale.set(1,1,1); }
     this.selectedSquad = null;
     this.gridMap.clearHighlights();
-    this.gridMap.highlightTile(finalPos.col, finalPos.row, 0x39ff8e, 0.50);
-    if (finalPos.col === targetPos.col && finalPos.row === targetPos.row)
-      chatUI.addLog(`A${squad.id}`,null,`이동 → ${String.fromCharCode(65+finalPos.col)}-${String(finalPos.row+1).padStart(2,'0')}`);
     this._syncPanel();
   }
+
+  /* ────────── 명령: 이동 (오청 3종 완전 통합) ────────── */
 
   _issueMove(squad, targetPos) {
     const dist = Math.abs(targetPos.col - squad.pos.col) + Math.abs(targetPos.row - squad.pos.row);
@@ -478,106 +446,76 @@ class GameScene {
     if (this.comms.rollMishear(quality)) {
       const res = this.comms.applyMishear(
         { type: 'move', squadId: squad.id, targetTile: targetPos, targetPos },
-        this.squads,   // 전체 분대 (적 찾기용)
-        squad          // 명령 발신 분대
+        this.squads,
+        squad
       );
 
       if (res.distorted) {
         chatUI.showMishear(res.originalText, res.distortedText, res.mishearType);
 
-        // ── 오청 종류별 처리 ──
-
-        // 1. 명령 무시 (제자리 대기)
+        // ── 오청 1: 명령 무시 (제자리 대기) ──
         if (res.mishearType === 'ignore') {
-          // AP 소모 없이 명령도 등록 안 함 → 분대 그냥 멈춤
           chatUI.addLog(`A${squad.id}`, null, '⚡ 명령 미수신 — 대기', 'system');
-          if (this.selectedSquad?.mat) {
-            this.selectedSquad.mat.emissive = new THREE.Color(0);
-            this.selectedSquad.mat.opacity = 0.90;
-            this.selectedSquad.mesh.scale.set(1, 1, 1);
-          }
-          this.selectedSquad = null;
-          this.gridMap.clearHighlights();
-          this._syncPanel();
+          this._clearSelection();
           return;
         }
 
-        // 2. 이동→공격 둔갑
+        // ── 오청 2: 이동→공격 둔갑 ──
         if (res.mishearType === 'attack_instead') {
-          const cmd = res.command; // { type:'attack', squadId, targetId }
-          const target = this.squads.find(s => s.id === cmd.targetId && s.alive);
-          if (target) {
-            if (squad.ap < 1) {
-              chatUI.addLog('SYSTEM', null, 'AP 부족 — 사격 불가', 'system');
-            } else {
-              this.pendingCmds.push({ type: 'attack', squadId: squad.id, targetId: target.id });
-              squad.ap -= 1;
-              chatUI.addLog(`A${squad.id}`, null, `⚡ 오청 → E${target.id - 3}분대 사격으로 둔갑`);
-              this.gridMap.highlightTile(target.pos.col, target.pos.row, 0xff4444, 0.50);
-            }
+          const target = this.squads.find(s => s.id === res.command.targetId && s.alive);
+          if (target && squad.ap >= 1) {
+            this.pendingCmds.push({ type: 'attack', squadId: squad.id, targetId: target.id });
+            squad.ap -= 1;
+            chatUI.addLog(`A${squad.id}`, null, `⚡ 오청 → E${target.id - 3}분대 사격으로 둔갑`);
+            this.gridMap.clearHighlights();
+            this.gridMap.highlightTile(target.pos.col, target.pos.row, 0xff4444, 0.50);
+          } else {
+            chatUI.addLog(`A${squad.id}`, null, '⚡ 오청(사격 둔갑) — AP 부족으로 대기', 'system');
           }
-          if (this.selectedSquad?.mat) {
-            this.selectedSquad.mat.emissive = new THREE.Color(0);
-            this.selectedSquad.mat.opacity = 0.90;
-            this.selectedSquad.mesh.scale.set(1, 1, 1);
-          }
-          this.selectedSquad = null;
-          this.gridMap.clearHighlights();
-          this._syncPanel();
+          this._clearSelection();
           return;
         }
 
-        // 3. 좌표 변형 → 변형된 위치로 이동
+        // ── 오청 3: 좌표 변형 ──
         if (res.mishearType === 'coord') {
-          const distPos = res.command.targetTile;
-          // 변형된 위치의 이동 비용 재확인
+          const distPos  = res.command.targetTile;
           const distCost = this.gridMap.tiles[distPos.row][distPos.col].terrain.moveCost || 1;
           const distDist = Math.abs(distPos.col - squad.pos.col) + Math.abs(distPos.row - squad.pos.row);
+
           if (distDist > 0 && distCost <= squad.ap && distDist <= squad.ap) {
             this.pendingCmds.push({ type: 'move', squadId: squad.id, targetPos: distPos });
             squad.ap -= distCost;
+            this.gridMap.clearHighlights();
             this.gridMap.highlightTile(distPos.col, distPos.row, 0xffb84d, 0.50); // 주황 = 오청 목적지
+            chatUI.addLog(`A${squad.id}`, null,
+              `⚡ 오청 이동 → ${String.fromCharCode(65+distPos.col)}-${String(distPos.row+1).padStart(2,'0')}`);
           } else {
-            // 변형 위치도 이동 불가면 그냥 대기
             chatUI.addLog(`A${squad.id}`, null, '⚡ 오청 좌표 이동 불가 → 대기', 'system');
           }
-          if (this.selectedSquad?.mat) {
-            this.selectedSquad.mat.emissive = new THREE.Color(0);
-            this.selectedSquad.mat.opacity = 0.90;
-            this.selectedSquad.mesh.scale.set(1, 1, 1);
-          }
-          this.selectedSquad = null;
-          this.gridMap.clearHighlights();
-          this._syncPanel();
+          this._clearSelection();
           return;
         }
       }
     }
 
-    // ── 오청 없음: 정상 이동 처리 ──
+    // ── 오청 없음: 정상 이동 ──
     this.pendingCmds.push({ type: 'move', squadId: squad.id, targetPos });
     squad.ap -= cost;
 
     const future = this._getSquadsOnTile(targetPos.col, targetPos.row, 'ally');
     if (future.length > 0) {
-      const coord = `${String.fromCharCode(65 + targetPos.col)}-${String(targetPos.row + 1).padStart(2, '00')}`;
-      chatUI.addLog('SYSTEM', null, `⚠ A${squad.id}→${coord} 겹침 예정(A${future.map(s => s.id).join('/')})`, 'system');
+      const coord = `${String.fromCharCode(65+targetPos.col)}-${String(targetPos.row+1).padStart(2,'0')}`;
+      chatUI.addLog('SYSTEM', null, `⚠ A${squad.id}→${coord} 겹침 예정(A${future.map(s=>s.id).join('/')})`, 'system');
     }
 
-    if (this.selectedSquad?.mat) {
-      this.selectedSquad.mat.emissive = new THREE.Color(0);
-      this.selectedSquad.mat.opacity = 0.90;
-      this.selectedSquad.mesh.scale.set(1, 1, 1);
-    }
-    this.selectedSquad = null;
     this.gridMap.clearHighlights();
     this.gridMap.highlightTile(targetPos.col, targetPos.row, 0x39ff8e, 0.50);
     chatUI.addLog(`A${squad.id}`, null,
-      `이동 → ${String.fromCharCode(65 + targetPos.col)}-${String(targetPos.row + 1).padStart(2, '0')}`);
-    this._syncPanel();
+      `이동 → ${String.fromCharCode(65+targetPos.col)}-${String(targetPos.row+1).padStart(2,'0')}`);
+    this._clearSelection();
   }
 
-  /* ────────── 명령: 사격 ────────── */
+  /* ────────── 명령: 사격 (오청 통합) ────────── */
 
   _issueAttack(squad, target) {
     if (!this.combat.inRange(squad.pos, target.pos)) {
@@ -593,7 +531,7 @@ class GameScene {
 
     const quality = this._quality(squad);
 
-    // ── 오청 판정 (공격 명령도 오청 가능) ──
+    // ── 오청 판정 ──
     if (this.comms.rollMishear(quality)) {
       const res = this.comms.applyMishear(
         { type: 'attack', squadId: squad.id, targetId: target.id },
@@ -601,42 +539,36 @@ class GameScene {
         squad
       );
 
+      if (res.distorted && res.mishearType === 'ignore') {
+        chatUI.showMishear(res.originalText, res.distortedText, res.mishearType);
+        chatUI.addLog(`A${squad.id}`, null, '⚡ 사격 명령 미수신 — 대기', 'system');
+        this._clearSelection();
+        return;
+      }
+      // 그 외 오청 타입은 정상 사격으로 처리
       if (res.distorted) {
         chatUI.showMishear(res.originalText, res.distortedText, res.mishearType);
-
-        // 공격 명령 오청: 명령 무시만 처리 (attack_instead / coord는 의미 없음)
-        if (res.mishearType === 'ignore') {
-          chatUI.addLog(`A${squad.id}`, null, '⚡ 사격 명령 미수신 — 대기', 'system');
-          if (this.selectedSquad?.mat) {
-            this.selectedSquad.mat.emissive = new THREE.Color(0);
-            this.selectedSquad.mat.opacity = 0.90;
-            this.selectedSquad.mesh.scale.set(1, 1, 1);
-          }
-          this.selectedSquad = null;
-          this.gridMap.clearHighlights();
-          this._syncPanel();
-          return;
-        }
-        // 그 외 오청 타입은 정상 공격으로 처리 (사격 명령의 좌표 변형은 없음)
       }
     }
 
-    // ── 정상 공격 처리 ──
+    // ── 정상 사격 ──
     this.pendingCmds.push({ type: 'attack', squadId: squad.id, targetId: target.id });
     squad.ap -= 1;
 
-    if (this.selectedSquad?.mat) {
-      this.selectedSquad.mat.emissive = new THREE.Color(0);
-      this.selectedSquad.mat.opacity = 0.90;
-      this.selectedSquad.mesh.scale.set(1, 1, 1);
-    }
-    this.selectedSquad = null;
     this.gridMap.clearHighlights();
     this.gridMap.highlightTile(target.pos.col, target.pos.row, 0xff4444, 0.50);
-    chatUI.addLog(`A${squad.id}`, null, `E${target.id - 3}분대 사격 명령`);
-    this._syncPanel();
+    chatUI.addLog(`A${squad.id}`, null, `E${target.id-3}분대 사격 명령`);
+    this._clearSelection();
   }
 
+  _cancelCmd(squad) {
+    const idx = this.pendingCmds.findIndex(c => c.squadId === squad.id);
+    if (idx < 0) return;
+    const old = this.pendingCmds[idx];
+    if (old.type === 'move') squad.ap += this.gridMap.tiles[old.targetPos.row][old.targetPos.col].terrain.moveCost || 1;
+    else if (old.type === 'attack') squad.ap += 1;
+    this.pendingCmds.splice(idx, 1);
+  }
 
   /* ────────── 이동 애니메이션 ────────── */
 
@@ -693,19 +625,18 @@ class GameScene {
       if (fill) { fill.style.width = q+'%'; fill.className = 'stat-fill'+(q<50?' crit':q<CONFIG.COMMS_QUALITY_THRESHOLD?' warn':''); }
       if (cVal) cVal.textContent = q+'%';
 
-      const tag   = card.querySelector('.squad-status-tag');
+      const tag    = card.querySelector('.squad-status-tag');
       const hasCmd = !!this.pendingCmds.find(c => c.squadId === squad.id);
       const stack  = squad.alive ? this._getSquadsOnTile(squad.pos.col, squad.pos.row, 'ally').length : 0;
       if (tag) {
-        if      (!squad.alive)                         { tag.textContent='전멸';          tag.className='squad-status-tag combat'; }
-        else if (q < 40)                               { tag.textContent='통신두절';      tag.className='squad-status-tag nocomms'; }
-        else if (this.selectedSquad?.id === squad.id)  { tag.textContent='선택됨';        tag.className='squad-status-tag moving'; }
-        else if (hasCmd)                               { tag.textContent='명령↑';         tag.className='squad-status-tag moving'; }
+        if      (!squad.alive)                         { tag.textContent='전멸';           tag.className='squad-status-tag combat'; }
+        else if (q < 40)                               { tag.textContent='통신두절';       tag.className='squad-status-tag nocomms'; }
+        else if (this.selectedSquad?.id === squad.id)  { tag.textContent='선택됨';         tag.className='squad-status-tag moving'; }
+        else if (hasCmd)                               { tag.textContent='명령↑';          tag.className='squad-status-tag moving'; }
         else if (stack > 1)                            { tag.textContent=`겹침(${stack})`; tag.className='squad-status-tag nocomms'; }
-        else                                           { tag.textContent='대기';           tag.className='squad-status-tag'; }
+        else                                           { tag.textContent='대기';            tag.className='squad-status-tag'; }
       }
 
-      // 분대 고유색 왼쪽 바
       const cd = squad._colDef || this._squadColor(squad);
       card.style.borderLeft = `3px solid ${cd.css}`;
       card.classList.toggle('active', this.selectedSquad?.id === squad.id);
@@ -751,7 +682,6 @@ class GameScene {
     const mouse = this._toNDC(e);
     this.raycaster.setFromCamera(mouse, this.camera);
 
-    // ① 박스 정밀 레이캐스트
     const hits = this.raycaster.intersectObjects(this.squads.filter(s=>s.alive&&s.boxMesh).map(s=>s.boxMesh), false);
     if (hits.length > 0) {
       const { squadId } = hits[0].object.userData;
@@ -767,7 +697,6 @@ class GameScene {
       }
     }
 
-    // ② 타일 레이캐스트
     const tHits = this.raycaster.intersectObjects(this.gridMap.getTileMeshes());
     if (tHits.length === 0) return;
     const { col, row } = tHits[0].object.userData;
