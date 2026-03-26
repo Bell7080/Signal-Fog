@@ -12,20 +12,20 @@ class EnemyAI {
   constructor(geminiClient, fallbackAI) {
     this.gemini   = geminiClient;
     this.fallback = fallbackAI;
-    this.usingFallback = false;
+
+    // API 키가 없으면 처음부터 Fallback 사용
+    this.usingFallback = !CONFIG.GEMINI_API_KEY;
   }
 
   /**
    * 현재 맵 상태 직렬화 (Gemini 프롬프트용)
-   * 지형 정보(비개활지 타일)·아군 통신 품질·목표지점 포함
    * @param {GridMap} gridMap
-   * @param {Array}   allySquads  - 살아 있는 아군만
-   * @param {Array}   enemySquads - 살아 있는 적군만
-   * @param {number}  allyCommsQuality - 아군 평균 통신 품질 (0~100)
+   * @param {Array}   allySquads
+   * @param {Array}   enemySquads
+   * @param {number}  allyCommsQuality
    * @returns {object}
    */
   serializeMap(gridMap, allySquads, enemySquads, allyCommsQuality) {
-    // 개활지가 아닌 타일만 포함 (프롬프트 길이 최소화)
     const terrain = [];
     for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
       for (let c = 0; c < CONFIG.GRID_COLS; c++) {
@@ -36,9 +36,9 @@ class EnemyAI {
 
     return {
       gridSize: { cols: CONFIG.GRID_COLS, rows: CONFIG.GRID_ROWS },
-      allySpawnRow:  CONFIG.GRID_ROWS - 1,   // 아군 시작 행
-      enemySpawnRow: 0,                       // 적군 시작 행 (현재 위치)
-      objective:     { col: 6, row: 7 },     // 점령 목표 지점
+      allySpawnRow:  CONFIG.GRID_ROWS - 1,
+      enemySpawnRow: 0,
+      objective:     { col: 6, row: 7 },
       allyCommsQuality,
       terrain,
       ally: allySquads.map(s => ({
@@ -52,21 +52,33 @@ class EnemyAI {
 
   /**
    * 적 행동 결정 (Gemini 우선, 실패 시 Fallback)
-   * @param {object} mapState - serializeMap() 반환값
-   * @returns {Promise<Array<object>>} - 행동 배열
+   * @param {object} mapState
+   * @returns {Promise<Array<object>>}
    */
   async decideTurn(mapState) {
+    // Fallback 모드면 바로 반환
     if (this.usingFallback) {
       return this.fallback.decide(mapState.enemy, mapState.ally);
     }
 
     try {
       const actions = await this.gemini.call(mapState);
+      // 응답이 빈 배열이거나 유효하지 않으면 Fallback
+      if (!Array.isArray(actions) || actions.length === 0) {
+        throw new Error('Gemini 응답이 비어 있음');
+      }
       this.usingFallback = false;
       return actions;
     } catch (e) {
       console.warn('Gemini 실패 → FallbackAI 전환:', e.message);
-      chatUI.addLog('SYSTEM', null, '[AI] Gemini 연결 실패 → 폴백 AI로 전환', 'system');
+
+      // chatUI가 없을 경우에도 안전하게 처리
+      try {
+        if (typeof chatUI !== 'undefined' && chatUI) {
+          chatUI.addLog('SYSTEM', null, '[AI] Gemini 연결 실패 → 폴백 AI로 전환', 'system');
+        }
+      } catch (_) { /* UI 오류 무시 */ }
+
       this.usingFallback = true;
       return this.fallback.decide(mapState.enemy, mapState.ally);
     }
