@@ -1,12 +1,5 @@
 /* ============================================================
    ChatUI.js — 통신 채팅창 관리
-   오청 발생 시 글리치 텍스트 효과 + 경고음 연동 예정
-
-   구현 순서 (하나씩 추가):
-     1. addLog()         — 로그 메시지 DOM에 추가
-     2. sendChat()       — 채팅 입력창 전송 처리
-     3. switchChannel()  — 채널 탭 전환
-     4. showMishear()    — 오청 발생 시 글리치 로그 + 사운드
    ============================================================ */
 
 class ChatUI {
@@ -15,7 +8,6 @@ class ChatUI {
     this.logEl   = document.getElementById('chat-log');
     this.inputEl = document.getElementById('chat-input');
 
-    // 엔터키로 전송
     this.inputEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.sendChat();
     });
@@ -23,10 +15,10 @@ class ChatUI {
 
   /**
    * 로그 메시지 추가
-   * @param {string}  sender  - 발신자 (예: 'OC/T', 'SYSTEM', '대항군')
-   * @param {string|null} time - 시간 문자열, null이면 현재 시각 자동 삽입
-   * @param {string}  text    - 메시지 내용
-   * @param {string}  [type]  - '' | 'system' | 'distort'
+   * @param {string}      sender
+   * @param {string|null} time
+   * @param {string}      text
+   * @param {string}      [type] - '' | 'system' | 'distort'
    */
   addLog(sender, time, text, type = '') {
     const t  = time || new Date().toTimeString().slice(0, 5);
@@ -68,17 +60,30 @@ class ChatUI {
   }
 
   /**
-   * 오청 발생 로그 표시 (글리치 효과 + 경고음)
+   * 오청 발생 로그 표시 — 종류별로 다른 메시지
    * @param {string} originalText
    * @param {string} distortedText
+   * @param {string} [mishearType] - 'coord' | 'ignore' | 'attack_instead'
    */
-  showMishear(originalText, distortedText) {
-    this.addLog('⚠ 오청', null, distortedText, 'distort');
+  showMishear(originalText, distortedText, mishearType = 'coord') {
+    // 오청 종류별 헤더 텍스트
+    const typeLabel = {
+      coord:           '⚡ 오청 — 좌표 변형',
+      ignore:          '⚡ 오청 — 통신 두절',
+      attack_instead:  '⚡ 오청 — 명령 왜곡',
+    }[mishearType] || '⚡ 오청';
+
+    // 원본 명령을 흐릿하게 먼저 표시
+    this.addLog('⚠ 원본', null, originalText, 'distort');
+
+    // 오청 결과를 굵게 강조
+    this.addLog(typeLabel, null, distortedText, 'distort');
+
     // TODO: Howler.js 경고음 재생
     // sfx.radio_noise.play();
   }
 }
 
 // index.html의 onclick 핸들러와 호환되는 전역 래퍼
-function sendChat()                    { chatUI.sendChat(); }
-function switchChannel(tab, name)      { chatUI.switchChannel(tab, name); }
+function sendChat()               { chatUI.sendChat(); }
+function switchChannel(tab, name) { chatUI.switchChannel(tab, name); }
