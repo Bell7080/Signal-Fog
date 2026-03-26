@@ -1,0 +1,84 @@
+    /* ─────────────────────────────────────────
+       SQUAD PICKER — 겹침 분대 선택 팝업
+    ───────────────────────────────────────── */
+    #squad-picker {
+      display: none;
+      position: absolute;
+      z-index: 200;
+      min-width: 188px;
+      background: rgba(6, 10, 8, 0.97);
+      border: 1px solid var(--col-amber);
+      box-shadow: 0 0 24px rgba(255,184,77,.22), inset 0 0 12px rgba(255,184,77,.04);
+      padding: 0;
+      pointer-events: auto;
+    }
+
+    .picker-title {
+      font-size: .58rem;
+      letter-spacing: .14em;
+      color: var(--col-amber);
+      padding: 7px 12px 6px;
+      border-bottom: 1px solid rgba(255,184,77,.25);
+      background: rgba(255,184,77,.06);
+      text-transform: uppercase;
+    }
+
+    .picker-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 9px 12px 8px;
+      border-bottom: 1px solid var(--col-border);
+      cursor: pointer;
+      transition: background .15s;
+    }
+
+    .picker-item:hover {
+      background: rgba(57,255,142,.07);
+    }
+
+    .picker-item-cmd {
+      background: rgba(57,255,142,.04);
+    }
+
+    .picker-id {
+      font-size: .68rem;
+      color: var(--col-green);
+      letter-spacing: .1em;
+      font-weight: bold;
+    }
+
+    .picker-stat {
+      font-size: .58rem;
+      color: var(--col-text-dim);
+      letter-spacing: .04em;
+    }
+
+    .picker-stat strong {
+      color: var(--col-text);
+    }
+
+    .picker-cmd-badge {
+      display: inline-block;
+      margin-top: 3px;
+      font-size: .52rem;
+      letter-spacing: .08em;
+      color: var(--col-amber);
+      border: 1px solid var(--col-amber);
+      padding: 1px 5px;
+      width: fit-content;
+    }
+
+    .picker-close {
+      font-size: .56rem;
+      letter-spacing: .1em;
+      color: var(--col-text-dim);
+      text-align: center;
+      padding: 6px;
+      cursor: pointer;
+      transition: color .15s;
+    }
+
+    .picker-close:hover {
+      color: var(--col-red);
+    }
