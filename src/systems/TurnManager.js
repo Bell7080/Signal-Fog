@@ -1,6 +1,7 @@
 /* ============================================================
    TurnManager.js — 턴 순서 및 페이즈 전환 관리
    페이즈 흐름: INPUT → EXECUTE_ALLY → EXECUTE_ENEMY → CHECK → (next) INPUT
+   변경: _executeAlly / _executeEnemy 완료 후 겹침 시각화 갱신 호출
    ============================================================ */
 
 class TurnManager {
@@ -15,7 +16,6 @@ class TurnManager {
   startInputPhase() {
     this.scene.phase = 'INPUT';
 
-    // 선택 분대 스케일 리셋
     if (this.scene.selectedSquad) {
       const prev = this.scene.selectedSquad;
       if (prev.mat)  { prev.mat.emissive = new THREE.Color(0x000000); prev.mat.opacity = 0.90; }
@@ -25,7 +25,11 @@ class TurnManager {
     this.scene.pendingCmds   = [];
     this.scene.gridMap.clearHighlights();
 
-    // HUD 갱신
+    // 피커가 열려 있으면 닫기
+    if (typeof this.scene._hideSquadPicker === 'function') {
+      this.scene._hideSquadPicker();
+    }
+
     document.getElementById('hud-turn').textContent  = String(this.turn).padStart(2, '0');
     document.getElementById('hud-phase').textContent = '입력';
     document.getElementById('phase-val').textContent = '명령 입력';
@@ -33,14 +37,12 @@ class TurnManager {
     hud.startTurnTimer();
     hud.setStatus(`턴 ${this.turn} — 각 분대에 이동·사격 명령을 입력하십시오`);
 
-    // 모든 분대 AP 초기화
     for (const s of this.scene.squads) {
       if (s.alive) s.ap = CONFIG.SQUAD_AP_MAX;
     }
-    // 배터리 소모
     this.scene.comms.drainBattery();
-    // 포그 오브 워 갱신
-    if (typeof this.scene._updateFog === 'function') this.scene._updateFog();
+    if (typeof this.scene._updateFog === 'function')          this.scene._updateFog();
+    if (typeof this.scene._updateOverlapVisuals === 'function') this.scene._updateOverlapVisuals();
     this.scene._syncPanel();
   }
 
@@ -49,6 +51,11 @@ class TurnManager {
     if (this.scene.phase !== 'INPUT') return;
     this.scene.phase = 'EXECUTE';
     hud.stopTimer();
+
+    // 피커 닫기
+    if (typeof this.scene._hideSquadPicker === 'function') {
+      this.scene._hideSquadPicker();
+    }
 
     document.getElementById('hud-phase').textContent = '실행';
     document.getElementById('phase-val').textContent = '실행 중';
@@ -90,6 +97,11 @@ class TurnManager {
         }
       }
     }
+
+    // 아군 실행 완료 후 겹침 시각화 갱신
+    if (typeof this.scene._updateOverlapVisuals === 'function') {
+      this.scene._updateOverlapVisuals();
+    }
     this.scene._syncPanel();
   }
 
@@ -100,17 +112,14 @@ class TurnManager {
 
     if (enemySquads.length === 0) return;
 
-    // 아군 평균 통신 품질 계산
     const avgComms = allySquads.length > 0
       ? Math.round(allySquads.reduce((sum, s) => sum + this.scene._quality(s), 0) / allySquads.length)
       : 100;
 
-    // 맵 상태 직렬화
     const mapState = this.scene.enemyAI.serializeMap(
       this.scene.gridMap, allySquads, enemySquads, avgComms
     );
 
-    // AI 결정 (Gemini 성공 시 전술적 판단, 실패 시 FallbackAI)
     const actions = await this.scene.enemyAI.decideTurn(mapState);
 
     for (const action of actions) {
@@ -124,8 +133,7 @@ class TurnManager {
           await this._wait(100);
         }
       } else if (action.action === 'attack') {
-        // targetId는 숫자 또는 'ally_N' 형식 모두 수용
-        const rawId  = action.targetId;
+        const rawId    = action.targetId;
         const targetId = typeof rawId === 'number'
           ? rawId
           : parseInt(String(rawId).replace('ally_', ''));
@@ -135,6 +143,11 @@ class TurnManager {
           await this._wait(320);
         }
       }
+    }
+
+    // 적군 실행 완료 후 겹침 시각화 갱신
+    if (typeof this.scene._updateOverlapVisuals === 'function') {
+      this.scene._updateOverlapVisuals();
     }
     this.scene._syncPanel();
   }
@@ -173,7 +186,6 @@ class TurnManager {
       return;
     }
 
-    // 목표 지점 점령 알림
     const obj   = DEMO_OBJECTIVE;
     const onObj = allyAlive.find(s => s.pos.col === obj.col && s.pos.row === obj.row);
     if (onObj) {
@@ -185,7 +197,7 @@ class TurnManager {
     this._nextTurn();
   }
 
-  /* ── 결과 오버레이 표시 ── */
+  /* ── 결과 오버레이 ── */
   _showResult(win, data) {
     hud.stopTimer();
     this.scene.phase = 'RESULT';
