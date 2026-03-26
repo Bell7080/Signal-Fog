@@ -1,7 +1,6 @@
 /* ============================================================
    TurnManager.js — 턴 순서 및 페이즈 전환 관리
    페이즈 흐름: INPUT → EXECUTE_ALLY → EXECUTE_ENEMY → CHECK → (next) INPUT
-   변경: _executeAlly / _executeEnemy 완료 후 겹침 시각화 갱신 호출
    ============================================================ */
 
 class TurnManager {
@@ -25,7 +24,6 @@ class TurnManager {
     this.scene.pendingCmds   = [];
     this.scene.gridMap.clearHighlights();
 
-    // 피커가 열려 있으면 닫기
     if (typeof this.scene._hideSquadPicker === 'function') {
       this.scene._hideSquadPicker();
     }
@@ -41,7 +39,7 @@ class TurnManager {
       if (s.alive) s.ap = CONFIG.SQUAD_AP_MAX;
     }
     this.scene.comms.drainBattery();
-    if (typeof this.scene._updateFog === 'function')          this.scene._updateFog();
+    if (typeof this.scene._updateFog === 'function')            this.scene._updateFog();
     if (typeof this.scene._updateOverlapVisuals === 'function') this.scene._updateOverlapVisuals();
     this.scene._syncPanel();
   }
@@ -52,7 +50,6 @@ class TurnManager {
     this.scene.phase = 'EXECUTE';
     hud.stopTimer();
 
-    // 피커 닫기
     if (typeof this.scene._hideSquadPicker === 'function') {
       this.scene._hideSquadPicker();
     }
@@ -98,19 +95,21 @@ class TurnManager {
       }
     }
 
-    // 아군 실행 완료 후 겹침 시각화 갱신
     if (typeof this.scene._updateOverlapVisuals === 'function') {
       this.scene._updateOverlapVisuals();
     }
     this.scene._syncPanel();
   }
 
-  /* ── 적군 행동 (Gemini AI → FallbackAI 자동 전환) ── */
+  /* ── 적군 행동 ── */
   async _executeEnemy() {
     const allySquads  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
     const enemySquads = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
 
-    if (enemySquads.length === 0) return;
+    if (enemySquads.length === 0) {
+      chatUI.addLog('SYSTEM', null, '적군 전멸 — 행동 없음', 'system');
+      return;
+    }
 
     const avgComms = allySquads.length > 0
       ? Math.round(allySquads.reduce((sum, s) => sum + this.scene._quality(s), 0) / allySquads.length)
@@ -120,32 +119,73 @@ class TurnManager {
       this.scene.gridMap, allySquads, enemySquads, avgComms
     );
 
-    const actions = await this.scene.enemyAI.decideTurn(mapState);
+    let actions = [];
+    try {
+      actions = await this.scene.enemyAI.decideTurn(mapState);
+    } catch (err) {
+      console.error('decideTurn 오류:', err);
+      // 최후 안전망: 직접 FallbackAI 호출
+      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally);
+    }
+
+    // actions가 배열이 아닌 경우 방어
+    if (!Array.isArray(actions)) {
+      console.warn('actions가 배열이 아님:', actions);
+      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally);
+    }
+
+    console.log(`[TurnManager] 적군 액션 ${actions.length}개:`, actions);
+    chatUI.addLog('SYSTEM', null, `적군 행동 ${actions.length}개 수신`, 'system');
 
     for (const action of actions) {
-      const squad = this.scene.squads.find(s => s.id === action.squadId);
-      if (!squad || !squad.alive) continue;
+      // squadId로 실제 씬의 분대 객체 찾기
+      const squad = this.scene.squads.find(s => s.side === 'enemy' && s.id === action.squadId && s.alive);
+      if (!squad) {
+        console.warn(`[TurnManager] 적군 분대 ID ${action.squadId} 없음 또는 전멸`);
+        continue;
+      }
 
       if (action.action === 'move') {
-        const targetPos = { col: action.targetCol, row: action.targetRow };
-        if (this.scene.gridMap.isInBounds(targetPos.col, targetPos.row)) {
-          await new Promise(resolve => this.scene.moveSquadTo(squad, targetPos, resolve));
-          await this._wait(100);
+        const targetPos = {
+          col: Math.round(action.targetCol),
+          row: Math.round(action.targetRow),
+        };
+
+        if (!this.scene.gridMap.isInBounds(targetPos.col, targetPos.row)) {
+          console.warn(`[TurnManager] 적군 이동 범위 초과: col=${targetPos.col}, row=${targetPos.row}`);
+          continue;
         }
+
+        // 현재 위치와 동일하면 스킵
+        if (targetPos.col === squad.pos.col && targetPos.row === squad.pos.row) {
+          console.log(`[TurnManager] E${squad.id-3} 제자리 — 스킵`);
+          continue;
+        }
+
+        chatUI.addLog(`E${squad.id-3}`, null,
+          `이동 → ${String.fromCharCode(65+targetPos.col)}-${String(targetPos.row+1).padStart(2,'0')}`);
+        await new Promise(resolve => this.scene.moveSquadTo(squad, targetPos, resolve));
+        await this._wait(100);
+
       } else if (action.action === 'attack') {
+        // targetId 정규화 (숫자 또는 "ally_N" 형식 대응)
         const rawId    = action.targetId;
         const targetId = typeof rawId === 'number'
           ? rawId
-          : parseInt(String(rawId).replace('ally_', ''));
-        const target = this.scene.squads.find(s => s.id === targetId);
-        if (target && target.alive) {
-          this.scene.applyHit(squad, target);
-          await this._wait(320);
+          : parseInt(String(rawId).replace(/\D/g, ''));
+
+        const target = this.scene.squads.find(s => s.side === 'ally' && s.id === targetId && s.alive);
+        if (!target) {
+          console.warn(`[TurnManager] 공격 대상 ID ${rawId} 없음`);
+          continue;
         }
+
+        chatUI.addLog(`E${squad.id-3}`, null, `A${target.id}분대 사격`);
+        this.scene.applyHit(squad, target);
+        await this._wait(320);
       }
     }
 
-    // 적군 실행 완료 후 겹침 시각화 갱신
     if (typeof this.scene._updateOverlapVisuals === 'function') {
       this.scene._updateOverlapVisuals();
     }

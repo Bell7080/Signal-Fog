@@ -7,42 +7,42 @@
 const CONFIG = {
 
   /* ── 맵 ── */
-  GRID_COLS:    12,         // 소대급 전투: 12×16 직사각 그리드 (약 600m×800m, 50m/타일)
+  GRID_COLS:    12,
   GRID_ROWS:    16,
-  TILE_SIZE:    64,         // 픽셀 단위 타일 크기
+  TILE_SIZE:    64,
 
   /* ── 지형 종류 (예선 MVP 4종) ── */
   TERRAIN: {
     OPEN:    { id: 'open',   label: '개활지', moveCost: 1, commsBonus:  0, cover: 0   },
     FOREST:  { id: 'forest', label: '수풀',   moveCost: 2, commsBonus:  0, cover: 0.1 },
-    VALLEY:  { id: 'valley', label: '계곡',   moveCost: 2, commsPenalty: 40, cover: 0  }, // 오청 핵심
+    VALLEY:  { id: 'valley', label: '계곡',   moveCost: 2, commsPenalty: 40, cover: 0  },
     HILL:    { id: 'hill',   label: '고지',   moveCost: 2, commsRange: 1,  cover: 0   },
   },
 
   /* ── 분대 ── */
-  SQUAD_COUNT:      3,      // 기본 분대 수 (3~5, 예선은 3 고정)
-  SQUAD_AP_MAX:     4,      // 분대당 턴 행동력 최대치
-  SQUAD_TROOP_MAX:  4,      // 분대당 기본 병력 수
+  SQUAD_COUNT:      3,
+  SQUAD_AP_MAX:     4,
+  SQUAD_TROOP_MAX:  4,
 
   /* ── 통신 ── */
-  COMMS_QUALITY_THRESHOLD: 70, // 이 값 미만이면 오청 발생 가능
-  BATTERY_DRAIN_PER_TURN:  3,  // 턴당 배터리 소모 (%)
+  COMMS_QUALITY_THRESHOLD: 70,
+  BATTERY_DRAIN_PER_TURN:  3,
 
   /* ── 교전 ── */
-  RIFLE_RANGE:      4,      // 소총 사거리 (타일, K2 기준 ~200m)
-  RIFLE_HIT_RATE:   0.6,    // 소총 기본 명중률 60%
-  FOG_SIGHT_RANGE:  4,      // 시야 범위 (타일, ~200m)
+  RIFLE_RANGE:      4,
+  RIFLE_HIT_RATE:   0.6,
+  FOG_SIGHT_RANGE:  4,
 
   /* ── 턴 ── */
-  TURN_LIMIT:      30,      // 최대 턴 수 (맵 확장 반영)
-  TURN_INPUT_SEC:  60,      // 명령 입력 제한 시간 (초)
+  TURN_LIMIT:      30,
+  TURN_INPUT_SEC:  60,
 
   /* ── 승리 조건 ── */
-  CAPTURE_HOLD_TURNS: 3,    // 목표 지점 점령 유지 턴 수
+  CAPTURE_HOLD_TURNS: 3,
 
   /* ── AI ── */
+  GEMINI_API_KEY: '',          // ← 키가 있으면 여기에 입력. 없으면 FallbackAI 사용
   GEMINI_MODEL:   'gemini-2.0-flash',
-  GEMINI_TIMEOUT: 3000,     // ms — 초과 시 FallbackAI 전환
- 
+  GEMINI_TIMEOUT: 3000,
 
 };
