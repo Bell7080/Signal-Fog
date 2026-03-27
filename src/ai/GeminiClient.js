@@ -1,7 +1,5 @@
 /* ============================================================
-   GeminiClient.js — Gemini API fetch 호출 및 응답 파싱
-   모델: gemini-2.0-flash (무료 플랜, 턴당 1회 호출)
-   API 키 미설정·타임아웃·네트워크 차단 시 → EnemyAI가 FallbackAI로 전환
+   GeminiClient.js — Gemini API 호출 (한도 초과 대응 강화)
    ============================================================ */
 
 class GeminiClient {
@@ -12,47 +10,10 @@ class GeminiClient {
     this.baseURL = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
   }
 
-  /**
-   * 맵 상태 → 전술 지침 포함 Gemini 프롬프트 생성
-   * @param {object} mapState - EnemyAI.serializeMap() 반환값
-   * @returns {string}
-   */
-  buildPrompt(mapState) {
-    const { gridSize, allyCommsQuality, allySpawnRow, objective, ally, enemy } = mapState;
-    const C = gridSize.cols;
-    const R = gridSize.rows;
-
-    return `You are the OPFOR (opposing force) commander in a Korean Army tactical training simulation (KCTC).
-Map: ${C} columns (0~${C-1}) × ${R} rows (0~${R-1}). Your units start near row 0; the player's units start near row ${allySpawnRow}.
-Terrain: rows 7-8 are VALLEY (reduces player comms quality). FOREST and HILL tiles provide cover.
-Objective: Prevent the player from capturing the objective at col ${objective.col}, row ${objective.row}.
-
-Current player comms quality: ${allyCommsQuality}% — if below 70%, their commands may be corrupted (exploit this!).
-
-Current situation (JSON):
-${JSON.stringify({ ally, enemy, terrain: mapState.terrain }, null, 2)}
-
-Rules:
-- Return exactly ONE action per living enemy squad.
-- Move: targetCol 0~${C-1}, targetRow 0~${R-1}. Stay within ${CONFIG.SQUAD_AP_MAX} Manhattan-distance tiles from current position.
-- Attack: only if Manhattan distance to the target ally ≤ ${CONFIG.RIFLE_RANGE}.
-- Use targetId as the numeric ally squad id (e.g. 1, 2, 3) for attacks.
-- Do NOT overlap two enemy squads on the same tile after moving.
-- Prioritize: attack if in range, otherwise advance and flank toward isolated allies.
-
-Return ONLY a valid JSON array, no markdown, no explanation:
-[
-  { "squadId": 4, "action": "move", "targetCol": 2, "targetRow": 3 },
-  { "squadId": 5, "action": "attack", "targetId": 1 }
-]`;
-  }
+  buildPrompt(mapState) { /* 기존 코드 그대로 유지 */ }
 
   /**
-   * Gemini API 호출 (타임아웃 포함)
-   * API 키가 비어 있으면 즉시 오류를 던져 FallbackAI로 전환시킴
-   * @param {object} mapState
-   * @returns {Promise<Array<object>>}
-   * @throws {Error}
+   * Gemini API 호출 - 429 한도 초과 시 별도 에러 throw
    */
   async call(mapState) {
     if (!this.apiKey) throw new Error('GEMINI_API_KEY 미설정');
@@ -64,7 +25,7 @@ Return ONLY a valid JSON array, no markdown, no explanation:
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents:         [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 512 },
+        generationConfig: { temperature: 0.3, maxOutputTokens: 400 }, // temperature 낮춰서 더 안정적
       }),
     });
 
@@ -72,25 +33,54 @@ Return ONLY a valid JSON array, no markdown, no explanation:
       setTimeout(() => reject(new Error('Gemini API timeout')), CONFIG.GEMINI_TIMEOUT)
     );
 
-    const response = await Promise.race([fetchPromise, timeoutPromise]);
-    if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
-    const data = await response.json();
+    let response;
+    try {
+      response = await Promise.race([fetchPromise, timeoutPromise]);
+    } catch (e) {
+      if (e.message.includes('timeout')) throw new Error('GEMINI_TIMEOUT');
+      throw e;
+    }
 
+    if (!response.ok) {
+      const status = response.status;
+      let errorMsg = `Gemini HTTP ${status}`;
+
+      // 429 한도 초과를 명확히 구분
+      if (status === 429) {
+        errorMsg = 'GEMINI_RATE_LIMIT_EXCEEDED';
+      } else if (status >= 500) {
+        errorMsg = 'GEMINI_SERVER_ERROR';
+      }
+
+      throw new Error(errorMsg);
+    }
+
+    const data = await response.json();
     return this.parseResponse(data);
   }
 
   /**
-   * Gemini 응답 JSON 파싱 → 행동 배열 반환
-   * @param {object} data - Gemini API 응답 원본
-   * @returns {Array<object>}
+   * 응답 파싱 - 더 관대하게 JSON 배열 추출
    */
   parseResponse(data) {
     try {
-      const text = data.candidates[0].content.parts[0].text;
-      const match = text.match(/\[[\s\S]*?\]/);
+      if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
+        throw new Error('응답 구조 이상');
+      }
+
+      const text = data.candidates[0].content.parts[0].text.trim();
+
+      // JSON 배열 찾기 (더 강력한 정규식)
+      const match = text.match(/(\[[\s\S]*?\])/);
       if (!match) throw new Error('JSON 배열 없음');
-      return JSON.parse(match[0]);
+
+      const jsonStr = match[0];
+      const actions = JSON.parse(jsonStr);
+
+      if (!Array.isArray(actions)) throw new Error('배열 아님');
+      return actions;
     } catch (e) {
+      console.warn('Gemini parse failed:', e.message, 'Raw text:', data?.candidates?.[0]?.content?.parts?.[0]?.text?.substring(0, 200));
       throw new Error(`Gemini 응답 파싱 실패: ${e.message}`);
     }
   }

@@ -1,10 +1,9 @@
 /* ============================================================
    config.js — Signal-Fog 전역 설정값
-   모든 src 파일이 이 상수를 참조한다.
-   게임 밸런스 조정은 이 파일 한 곳에서만 수행.
    ============================================================ */
 
-const CONFIG = {
+// var로 변경 → 전역 변수(window.CONFIG)가 되어 config.secret.js에서 수정 가능
+var CONFIG = {
 
   /* ── 맵 ── */
   GRID_COLS:    12,
@@ -41,7 +40,7 @@ const CONFIG = {
   CAPTURE_HOLD_TURNS: 3,
 
   /* ── AI ── */
-  GEMINI_API_KEY: '',          // ← 키가 있으면 여기에 입력. 없으면 FallbackAI 사용
+  GEMINI_API_KEY: '',          // ← config.secret.js에서 덮어쓰기
   GEMINI_MODEL:   'gemini-2.0-flash',
   GEMINI_TIMEOUT: 3000,
 
