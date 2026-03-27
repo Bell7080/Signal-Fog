@@ -402,7 +402,7 @@
   <header id="header">
     <div class="header-title">
       <h1>SIGNAL-FOG</h1>
-      <span>KCTC 과학화전투 시뮬레이터 // v0.1 ALPHA</span>
+      <span>KCTC 과학화전투 시뮬레이터 // v0.2</span>
     </div>
     <div class="header-status">
       <span><span class="status-dot" id="dot-comms"></span> COMMS</span>
@@ -417,63 +417,20 @@
     <!-- ── LEFT PANEL — 분대 현황 ── -->
     <aside class="panel" id="panel-left">
       <div class="panel-title">▸ 분대 현황</div>
-
       <div class="squad-list" id="squad-list">
-
-        <!-- 1분대 -->
-        <div class="squad-card active" onclick="selectSquad(this, 1)">
-          <div class="squad-card-header">
-            <span class="squad-badge">1분대</span>
-            <span class="squad-status-tag">대기</span>
-          </div>
-          <div class="squad-troops">병력 <span>3 / 3</span> &nbsp;|&nbsp; AP <span>4 / 4</span></div>
-          <div class="comms-row">
-            <span class="comms-label">통신</span>
-            <div class="stat-bar"><div class="stat-fill" style="width:85%"></div></div>
-            <span class="comms-val">85%</span>
-          </div>
-        </div>
-
-        <!-- 2분대 -->
-        <div class="squad-card" onclick="selectSquad(this, 2)">
-          <div class="squad-card-header">
-            <span class="squad-badge">2분대</span>
-            <span class="squad-status-tag moving">이동 중</span>
-          </div>
-          <div class="squad-troops">병력 <span>3 / 3</span> &nbsp;|&nbsp; AP <span>2 / 4</span></div>
-          <div class="comms-row">
-            <span class="comms-label">통신</span>
-            <div class="stat-bar"><div class="stat-fill warn" style="width:52%"></div></div>
-            <span class="comms-val">52%</span>
-          </div>
-        </div>
-
-        <!-- 3분대 -->
-        <div class="squad-card" onclick="selectSquad(this, 3)">
-          <div class="squad-card-header">
-            <span class="squad-badge">3분대</span>
-            <span class="squad-status-tag combat">교전 중</span>
-          </div>
-          <div class="squad-troops">병력 <span>2 / 3</span> &nbsp;|&nbsp; AP <span>1 / 4</span></div>
-          <div class="comms-row">
-            <span class="comms-label">통신</span>
-            <div class="stat-bar"><div class="stat-fill crit" style="width:28%"></div></div>
-            <span class="comms-val">28%</span>
-          </div>
-        </div>
-
-      </div><!-- /squad-list -->
+        <!-- GameScene._buildSquadPanel()에서 동적으로 생성됨 -->
+      </div>
 
       <!-- 대대장 공용 자원 -->
       <div class="commander-block">
         <div class="panel-title" style="border:none;padding:0 0 7px 0;font-size:.55rem;">COMMANDER</div>
         <div class="resource-row">
           <span>무전기 배터리</span>
-          <span class="resource-val warn">58%</span>
+          <span class="resource-val warn" id="battery-val">100%</span>
         </div>
         <div class="resource-row">
           <span>현재 페이즈</span>
-          <span class="resource-val" id="phase-val">명령 입력</span>
+          <span class="resource-val" id="phase-val">준비 중</span>
         </div>
         <div class="resource-row" id="terrain-row" style="color:var(--col-red);font-size:.57rem;margin-top:2px;display:none;">
           ⚠ 통신 음영 구역
@@ -495,11 +452,11 @@
       <!-- HUD 오버레이 -->
       <div id="hud-overlay">
         <div class="hud-chip">TURN <span class="val" id="hud-turn">01</span></div>
-        <div class="hud-chip">GRID <span class="val" id="hud-coord">D-04</span></div>
-        <div class="hud-chip">PHASE <span class="val" id="hud-phase">입력</span></div>
+        <div class="hud-chip">GRID <span class="val" id="hud-coord">--</span></div>
+        <div class="hud-chip">PHASE <span class="val" id="hud-phase">준비</span></div>
       </div>
 
-      <!-- ★ 겹침 분대 선택 피커 ★ -->
+      <!-- 겹침 분대 선택 피커 -->
       <div id="squad-picker"></div>
 
     </div><!-- /game-canvas-container -->
@@ -529,7 +486,7 @@
   <footer id="footer">
     <div class="turn-timer-wrap">
       <div class="turn-label">TURN INPUT</div>
-      <div id="turn-timer">60</div>
+      <div id="turn-timer">90</div>
       <div class="timer-bar-wrap"><div id="timer-bar"></div></div>
     </div>
     <div class="footer-status" id="footer-status">대기 중 — 분대 명령 입력 후 CONFIRM</div>
@@ -553,9 +510,13 @@
 
 </div><!-- /app-wrapper -->
 
-<!-- ── 게임 소스 로드 ── -->
+<!-- ── 게임 소스 로드 ──
+     순서 중요: config → AI APIKeyModal → ui 모듈들 → systems → ai → scenes → main
+     ★ src/ai/APIKeyModal.js (v0.2: 분대 수 슬라이더 포함) 사용
+       src/ui/APIKeyModal.js (v0.1: 구버전) 은 로드하지 않음
+-->
 <script src="src/config.js"></script>
-<script src="src/ui/APIKeyModal.js"></script>
+<script src="src/ai/APIKeyModal.js"></script>
 <script src="src/ui/ChatUI.js"></script>
 <script src="src/ui/HUD.js"></script>
 <script src="src/ui/MiniMap.js"></script>
@@ -574,7 +535,7 @@
 <script src="src/main.js"></script>
 
 <script>
-  /* ── 부팅 시퀀스 (v0.2 — 250×250 맵) ── */
+  /* ── 부팅 시퀀스 ── */
   const BOOT_LINES = [
     '> SIGNAL-FOG v0.2 초기화 중...',
     '> Three.js 0.128.0 로드 완료',
@@ -616,9 +577,10 @@
     setTimeout(bootStep, 220 + Math.random() * 180);
   }
 
+  /* ── 로드 완료 시 APIKeyModal(v0.2) 표시 ── */
   window.addEventListener('load', () => {
-  APIKeyModal.show(() => setTimeout(bootStep, 300));
-});
+    APIKeyModal.show(() => setTimeout(bootStep, 300));
+  });
 
   /* ── 시계 ── */
   function updateClock() {

@@ -1,6 +1,7 @@
 /* ============================================================
    TurnManager.js — 턴 순서 및 페이즈 전환 관리
    페이즈 흐름: INPUT → EXECUTE_ALLY → EXECUTE_ENEMY → CHECK → (next) INPUT
+   v0.2 fix: DEMO_OBJECTIVE → window.gameScene._DEMO_OBJECTIVE 참조 수정
    ============================================================ */
 
 class TurnManager {
@@ -124,11 +125,9 @@ class TurnManager {
       actions = await this.scene.enemyAI.decideTurn(mapState);
     } catch (err) {
       console.error('decideTurn 오류:', err);
-      // 최후 안전망: 직접 FallbackAI 호출
       actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally);
     }
 
-    // actions가 배열이 아닌 경우 방어
     if (!Array.isArray(actions)) {
       console.warn('actions가 배열이 아님:', actions);
       actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally);
@@ -138,7 +137,6 @@ class TurnManager {
     chatUI.addLog('SYSTEM', null, `적군 행동 ${actions.length}개 수신`, 'system');
 
     for (const action of actions) {
-      // squadId로 실제 씬의 분대 객체 찾기
       const squad = this.scene.squads.find(s => s.side === 'enemy' && s.id === action.squadId && s.alive);
       if (!squad) {
         console.warn(`[TurnManager] 적군 분대 ID ${action.squadId} 없음 또는 전멸`);
@@ -156,19 +154,17 @@ class TurnManager {
           continue;
         }
 
-        // 현재 위치와 동일하면 스킵
         if (targetPos.col === squad.pos.col && targetPos.row === squad.pos.row) {
-          console.log(`[TurnManager] E${squad.id-3} 제자리 — 스킵`);
           continue;
         }
 
-        chatUI.addLog(`E${squad.id-3}`, null,
-          `이동 → ${String.fromCharCode(65+targetPos.col)}-${String(targetPos.row+1).padStart(2,'0')}`);
+        const eLabel = squad.id - CONFIG.SQUAD_COUNT;
+        chatUI.addLog(`E${eLabel}`, null,
+          `이동 → ${String.fromCharCode(65+(targetPos.col%26))}-${String(targetPos.row+1).padStart(3,'0')}`);
         await new Promise(resolve => this.scene.moveSquadTo(squad, targetPos, resolve));
         await this._wait(100);
 
       } else if (action.action === 'attack') {
-        // targetId 정규화 (숫자 또는 "ally_N" 형식 대응)
         const rawId    = action.targetId;
         const targetId = typeof rawId === 'number'
           ? rawId
@@ -180,7 +176,8 @@ class TurnManager {
           continue;
         }
 
-        chatUI.addLog(`E${squad.id-3}`, null, `A${target.id}분대 사격`);
+        const eLabel = squad.id - CONFIG.SQUAD_COUNT;
+        chatUI.addLog(`E${eLabel}`, null, `A${target.id}분대 사격`);
         this.scene.applyHit(squad, target);
         await this._wait(320);
       }
@@ -226,12 +223,16 @@ class TurnManager {
       return;
     }
 
-    const obj   = DEMO_OBJECTIVE;
-    const onObj = allyAlive.find(s => s.pos.col === obj.col && s.pos.row === obj.row);
-    if (onObj) {
-      const objLabel = `${String.fromCharCode(65 + obj.col)}-${String(obj.row + 1).padStart(2,'0')}`;
-      chatUI.addLog('SYSTEM', null,
-        `A${onObj.id}분대 목표 지점(${objLabel}) 점령 중 — ${CONFIG.CAPTURE_HOLD_TURNS}턴 유지 시 승리`, 'system');
+    /* ── 목표 지점 점령 판정 ──
+       DEMO_OBJECTIVE 전역변수 대신 this.scene._DEMO_OBJECTIVE 사용 (v0.2 fix) */
+    const obj = this.scene._DEMO_OBJECTIVE;
+    if (obj) {
+      const onObj = allyAlive.find(s => s.pos.col === obj.col && s.pos.row === obj.row);
+      if (onObj) {
+        const objLabel = `${String.fromCharCode(65 + (obj.col % 26))}-${String(obj.row + 1).padStart(3,'0')}`;
+        chatUI.addLog('SYSTEM', null,
+          `A${onObj.id}분대 목표 지점(${objLabel}) 점령 중 — ${CONFIG.CAPTURE_HOLD_TURNS}턴 유지 시 승리`, 'system');
+      }
     }
 
     this._nextTurn();
