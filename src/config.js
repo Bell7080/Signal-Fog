@@ -41,7 +41,7 @@ var CONFIG = {
 
   /* ── AI ── */
   GEMINI_API_KEY: '',          // ← config.secret.js에서 덮어쓰기
-  GEMINI_MODEL:   'gemini-2.5-flash',
+  GEMINI_MODEL:   'gemini-1.5-flash',
   GEMINI_TIMEOUT: 3000,
 
 };
