@@ -41,6 +41,6 @@ var CONFIG = {
 
   /* ── AI ── */
   GEMINI_API_KEY: '',          
-  GEMINI_MODEL: 'gemini-2.0-flash',   // ← 여기 수정 (가장 안정적)
+  GEMINI_MODEL: 'gemini-2.0-flash-lite',   // ← 여기 수정 (가장 안정적)
   GEMINI_TIMEOUT: 3000,
 };
