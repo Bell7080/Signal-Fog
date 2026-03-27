@@ -2,7 +2,7 @@
    config.js — Signal-Fog 전역 설정값
    ============================================================ */
 
-// var로 변경 → 전역 변수(window.CONFIG)가 되어 config.secret.js에서 수정 가능
+// var로 변경 → config.secret.js에서 안전하게 수정 가능
 var CONFIG = {
 
   /* ── 맵 ── */
@@ -40,8 +40,8 @@ var CONFIG = {
   CAPTURE_HOLD_TURNS: 3,
 
   /* ── AI ── */
-  GEMINI_API_KEY: '',          // ← config.secret.js에서 덮어쓰기
-  GEMINI_MODEL:   'gemini-1.5-flash',
+  GEMINI_API_KEY: '',          
+  GEMINI_MODEL:   'gemini-2.5-flash-lite',   // ← 여기 수정 (가장 안정적)
   GEMINI_TIMEOUT: 3000,
 
 };
