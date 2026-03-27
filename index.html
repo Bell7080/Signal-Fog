@@ -615,7 +615,9 @@
     setTimeout(bootStep, 220 + Math.random() * 180);
   }
 
-  window.addEventListener('load', () => setTimeout(bootStep, 600));
+  window.addEventListener('load', () => {
+  APIKeyModal.show(() => setTimeout(bootStep, 300));
+});
 
   /* ── 시계 ── */
   function updateClock() {
