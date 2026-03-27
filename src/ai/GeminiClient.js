@@ -1,5 +1,5 @@
 /* ============================================================
-   GeminiClient.js — Gemini API 호출 (한도 초과 대응 강화)
+   GeminiClient.js — Gemini API 호출 (2026년 3월 기준 개선 버전)
    ============================================================ */
 
 class GeminiClient {
@@ -10,27 +10,36 @@ class GeminiClient {
     this.baseURL = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
   }
 
-  buildPrompt(mapState) { /* 기존 코드 그대로 유지 */ }
+  buildPrompt(mapState) {
+    // 기존 buildPrompt 그대로 유지 (여기서는 생략)
+    // ... (원본 buildPrompt 코드 그대로 넣으세요)
+  }
 
   /**
-   * Gemini API 호출 - 429 한도 초과 시 별도 에러 throw
+   * Gemini API 호출 - 상세 에러 디버깅 강화
    */
   async call(mapState) {
     if (!this.apiKey) throw new Error('GEMINI_API_KEY 미설정');
 
     const prompt = this.buildPrompt(mapState);
 
+    console.log(`[Gemini Request] Model: ${this.model} | Prompt length: ${prompt.length} chars`);
+
     const fetchPromise = fetch(`${this.baseURL}?key=${this.apiKey}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents:         [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 400 }, // temperature 낮춰서 더 안정적
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { 
+          temperature: 0.3, 
+          maxOutputTokens: 300,     // 더 낮춰서 안전
+          topP: 0.85
+        },
       }),
     });
 
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini API timeout')), CONFIG.GEMINI_TIMEOUT)
+      setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), CONFIG.GEMINI_TIMEOUT)
     );
 
     let response;
@@ -42,14 +51,17 @@ class GeminiClient {
     }
 
     if (!response.ok) {
-      const status = response.status;
-      let errorMsg = `Gemini HTTP ${status}`;
+      let errorMsg = `Gemini HTTP ${response.status}`;
+      let errorBody = null;
 
-      // 429 한도 초과를 명확히 구분
-      if (status === 429) {
-        errorMsg = 'GEMINI_RATE_LIMIT_EXCEEDED';
-      } else if (status >= 500) {
-        errorMsg = 'GEMINI_SERVER_ERROR';
+      try {
+        errorBody = await response.json();
+        console.error('🔴 [Gemini Full Error Body]', errorBody);   // ← 이 로그가 핵심!
+        if (errorBody.error?.message) {
+          errorMsg += ` - ${errorBody.error.message}`;
+        }
+      } catch (parseErr) {
+        console.error('🔴 Gemini error body parsing failed');
       }
 
       throw new Error(errorMsg);
@@ -60,7 +72,7 @@ class GeminiClient {
   }
 
   /**
-   * 응답 파싱 - 더 관대하게 JSON 배열 추출
+   * 응답 파싱 (기존과 동일)
    */
   parseResponse(data) {
     try {
@@ -69,18 +81,15 @@ class GeminiClient {
       }
 
       const text = data.candidates[0].content.parts[0].text.trim();
-
-      // JSON 배열 찾기 (더 강력한 정규식)
       const match = text.match(/(\[[\s\S]*?\])/);
       if (!match) throw new Error('JSON 배열 없음');
 
-      const jsonStr = match[0];
-      const actions = JSON.parse(jsonStr);
-
+      const actions = JSON.parse(match[0]);
       if (!Array.isArray(actions)) throw new Error('배열 아님');
+
       return actions;
     } catch (e) {
-      console.warn('Gemini parse failed:', e.message, 'Raw text:', data?.candidates?.[0]?.content?.parts?.[0]?.text?.substring(0, 200));
+      console.warn('Gemini parse failed:', e.message);
       throw new Error(`Gemini 응답 파싱 실패: ${e.message}`);
     }
   }
