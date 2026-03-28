@@ -1,10 +1,41 @@
 /* ============================================================
    APIKeyModal.js (src/ai/) — 시작 전 API 키 선택 + 병력 편성 + 맵 크기 팝업
-   v0.4 FIX:
-     - src/ui/APIKeyModal.js 충돌 제거 (이 파일만 사용)
-     - 맵 크기 슬라이더 추가 (10×10 ~ 30×30)
-     - CONFIG.SQUAD_COUNT / ENEMY_COUNT / GRID_COLS / GRID_ROWS 올바르게 주입
+   v0.5 FIX:
+     - 맵 크기 슬라이더 비선형 스텝 적용
+       · 10 ~ 49 → 1 단위
+       · 50 ~ 250 → 10 단위
+     - 슬라이더 내부 값: 0 ~ (STEPS-1) 인덱스, 실제 맵 크기로 변환
+     - 최대 250×250
    ============================================================ */
+
+/* ── 비선형 스텝 테이블 생성 ──────────────────────────────────
+   10~49  → 1 단위  (40개)
+   50~250 → 10 단위 (21개)
+   총 61 스텝 (index 0~60)
+   ──────────────────────────────────────────────────────────── */
+(function buildMapSteps() {
+  const steps = [];
+  for (let v = 10; v <= 49; v += 1)  steps.push(v);
+  for (let v = 50; v <= 250; v += 10) steps.push(v);
+  window._MAP_STEPS = steps;           // [10,11,...,49,50,60,...,250]
+  window._MAP_STEPS_MAX_IDX = steps.length - 1;  // 60
+})();
+
+function _mapValToIdx(val) {
+  const steps = window._MAP_STEPS;
+  // 가장 가까운 인덱스 반환
+  let best = 0, bestDist = Infinity;
+  for (let i = 0; i < steps.length; i++) {
+    const d = Math.abs(steps[i] - val);
+    if (d < bestDist) { bestDist = d; best = i; }
+  }
+  return best;
+}
+
+function _mapIdxToVal(idx) {
+  const steps = window._MAP_STEPS;
+  return steps[Math.max(0, Math.min(steps.length - 1, idx))];
+}
 
 class APIKeyModal {
 
@@ -12,9 +43,9 @@ class APIKeyModal {
     const old = document.getElementById('api-modal-root');
     if (old) old.remove();
 
-    const mapDef = CONFIG.MAP_DEFAULT || 20;
-    const mapMin = CONFIG.MAP_MIN || 10;
-    const mapMax = CONFIG.MAP_MAX || 30;
+    const DEF_VAL = CONFIG.MAP_DEFAULT || 20;
+    const DEF_IDX = _mapValToIdx(DEF_VAL);
+    const MAX_IDX = window._MAP_STEPS_MAX_IDX;
 
     const root = document.createElement('div');
     root.id = 'api-modal-root';
@@ -33,7 +64,7 @@ class APIKeyModal {
           z-index: 1;
         }
         #api-modal-box {
-          position: relative; z-index: 2; width: 540px;
+          position: relative; z-index: 2; width: 560px;
           border: 1px solid #1e3a28; background: #080c0a;
           box-shadow: 0 0 60px rgba(57,255,142,.08), inset 0 0 30px rgba(57,255,142,.02);
           animation: modalIn .4s cubic-bezier(.16,1,.3,1) forwards;
@@ -80,9 +111,9 @@ class APIKeyModal {
         .force-card.enemy-card { border-color:#662222; }
         .force-card.map-card   { border-color:#1e3a55; }
         .force-card-title { font-size:.56rem; letter-spacing:.12em; margin-bottom:9px; text-transform:uppercase; }
-        .ally-card   .force-card-title { color:#39ff8e; }
-        .enemy-card  .force-card-title { color:#ff4444; }
-        .map-card    .force-card-title { color:#6699ff; }
+        .ally-card  .force-card-title { color:#39ff8e; }
+        .enemy-card .force-card-title { color:#ff4444; }
+        .map-card   .force-card-title { color:#6699ff; }
         .force-counter { display:flex; align-items:center; justify-content:space-between; gap:6px; }
         .force-btn { width:26px; height:26px; border:1px solid #1e3a28; background:transparent; font-family:'Share Tech Mono',monospace; font-size:1rem; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; flex-shrink:0; color:#c8e6c9; }
         .force-btn:hover { background:rgba(255,255,255,.07); border-color:#c8e6c9; }
@@ -91,14 +122,36 @@ class APIKeyModal {
         .enemy-card .force-val { color:#ff4444; text-shadow:0 0 10px rgba(255,68,68,.4); }
         .map-card   .force-val { color:#6699ff; text-shadow:0 0 10px rgba(102,153,255,.4); font-size:1.1rem; line-height:1.4; }
         .force-label { font-size:.52rem; color:#4a7c59; letter-spacing:.05em; text-align:center; margin-top:4px; font-family:'Noto Sans KR',sans-serif; }
-        .force-slider { width:100%; margin-top:8px; -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; outline:none; cursor:pointer; background:linear-gradient(to right,var(--slider-fill,#39ff8e) 0%,var(--slider-fill,#39ff8e) var(--slider-pct,50%),#1e3a28 var(--slider-pct,50%),#1e3a28 100%); }
-        .force-slider::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px; border-radius:50%; border:2px solid var(--slider-fill,#39ff8e); background:#080c0a; box-shadow:0 0 5px var(--slider-fill,#39ff8e); cursor:pointer; }
+
+        /* ── 비선형 맵 슬라이더 ── */
+        .force-slider {
+          width:100%; margin-top:8px;
+          -webkit-appearance:none; appearance:none;
+          height:3px; border-radius:2px; outline:none; cursor:pointer;
+          background: linear-gradient(to right,
+            var(--slider-fill,#39ff8e) 0%,
+            var(--slider-fill,#39ff8e) var(--slider-pct,50%),
+            #1e3a28 var(--slider-pct,50%),
+            #1e3a28 100%);
+        }
+        .force-slider::-webkit-slider-thumb {
+          -webkit-appearance:none; width:13px; height:13px; border-radius:50%;
+          border:2px solid var(--slider-fill,#39ff8e);
+          background:#080c0a; box-shadow:0 0 5px var(--slider-fill,#39ff8e); cursor:pointer;
+        }
         .ally-slider  { --slider-fill:#39ff8e; }
         .enemy-slider { --slider-fill:#ff4444; }
-        .map-slider   { --slider-fill:#6699ff; --slider-pct:50%; }
+        .map-slider   { --slider-fill:#6699ff; }
+
         .force-preview { margin-top:5px; font-size:.50rem; color:#4a7c59; letter-spacing:.04em; font-family:'Noto Sans KR',sans-serif; text-align:center; }
 
-        /* ── 지형 태그 (맵 카드 하단) ── */
+        /* ── 맵 크기 스텝 힌트 바 ── */
+        .map-step-hint {
+          display:flex; justify-content:space-between;
+          margin-top:4px; font-size:.44rem; color:#2a5a38; letter-spacing:.03em;
+        }
+
+        /* ── 지형 태그 ── */
         .terrain-tags { display:flex; gap:3px; flex-wrap:wrap; margin-top:7px; }
         .terrain-tag { font-size:.46rem; padding:1px 5px; border:1px solid; letter-spacing:.04em; }
         .terrain-tag.open   { color:#39ff8e; border-color:#39ff8e; }
@@ -118,7 +171,7 @@ class APIKeyModal {
       <div id="api-modal-box">
         <div id="api-modal-header">
           <div id="api-modal-logo">SIGNAL-FOG</div>
-          <div id="api-modal-sub">KCTC 과학화전투 시뮬레이터 // v0.4 — 팀 LNG</div>
+          <div id="api-modal-sub">KCTC 과학화전투 시뮬레이터 // v0.5 — 팀 LNG</div>
         </div>
 
         <div id="api-modal-body">
@@ -154,7 +207,7 @@ class APIKeyModal {
             <div id="api-key-status"></div>
           </div>
 
-          <!-- 병력 편성 + 맵 크기 — 3열 통합 -->
+          <!-- 병력 편성 + 맵 크기 -->
           <div class="modal-section-label">▸ 병력 편성 &amp; 작전 구역</div>
           <div class="force-grid">
 
@@ -166,7 +219,9 @@ class APIKeyModal {
                 <div><div class="force-val" id="ally-count-val">5</div><div class="force-label">개 분대</div></div>
                 <button class="force-btn" onclick="APIKeyModal._changeCount('ally',+1)">+</button>
               </div>
-              <input type="range" class="force-slider ally-slider" id="ally-slider" min="1" max="10" value="5" oninput="APIKeyModal._onSlider('ally',this.value)" />
+              <input type="range" class="force-slider ally-slider" id="ally-slider"
+                min="1" max="10" value="5"
+                oninput="APIKeyModal._onSlider('ally',this.value)" />
               <div class="force-preview" id="ally-preview">병사 20명 / AP 5×4</div>
             </div>
 
@@ -178,24 +233,31 @@ class APIKeyModal {
                 <div><div class="force-val" id="enemy-count-val">5</div><div class="force-label">개 분대</div></div>
                 <button class="force-btn" onclick="APIKeyModal._changeCount('enemy',+1)">+</button>
               </div>
-              <input type="range" class="force-slider enemy-slider" id="enemy-slider" min="1" max="10" value="5" oninput="APIKeyModal._onSlider('enemy',this.value)" />
+              <input type="range" class="force-slider enemy-slider" id="enemy-slider"
+                min="1" max="10" value="5"
+                oninput="APIKeyModal._onSlider('enemy',this.value)" />
               <div class="force-preview" id="enemy-preview">병사 20명</div>
             </div>
 
-            <!-- 맵 크기 -->
+            <!-- 맵 크기 (비선형 슬라이더) -->
             <div class="force-card map-card">
               <div class="force-card-title">🗺 맵 크기</div>
               <div class="force-counter">
                 <button class="force-btn" onclick="APIKeyModal._changeMap(-1)" style="border-color:#1e3a55;">−</button>
                 <div>
-                  <div class="force-val" id="map-size-display">${mapDef}×${mapDef}</div>
-                  <div class="force-label" id="map-tile-count">${mapDef*mapDef} 타일</div>
+                  <div class="force-val" id="map-size-display">${DEF_VAL}×${DEF_VAL}</div>
+                  <div class="force-label" id="map-tile-count">${DEF_VAL*DEF_VAL} 타일</div>
                 </div>
                 <button class="force-btn" onclick="APIKeyModal._changeMap(+1)" style="border-color:#1e3a55;">+</button>
               </div>
+              <!-- 슬라이더 range: 0 ~ MAX_IDX (인덱스 기반) -->
               <input type="range" class="force-slider map-slider" id="map-size-slider"
-                min="${mapMin}" max="${mapMax}" value="${mapDef}"
+                min="0" max="${MAX_IDX}" value="${DEF_IDX}"
                 oninput="APIKeyModal._onMapSlider(this.value)" />
+              <!-- 스텝 힌트 레이블 -->
+              <div class="map-step-hint">
+                <span>10</span><span>50</span><span>100</span><span>150</span><span>200</span><span>250</span>
+              </div>
               <div class="terrain-tags">
                 <span class="terrain-tag open">개활지</span>
                 <span class="terrain-tag forest">수풀</span>
@@ -209,7 +271,6 @@ class APIKeyModal {
           </div>
 
           <div class="modal-sep"></div>
-
           <button id="api-modal-start" disabled onclick="APIKeyModal._start()">
             ▶ &nbsp; 훈련 개시
           </button>
@@ -217,7 +278,7 @@ class APIKeyModal {
 
         <div id="api-modal-footer">
           ※ 입력된 API 키는 브라우저 메모리에만 보관되며 외부로 전송되지 않습니다.<br>
-          ※ 하천은 맵을 가로지르도록 연결 생성됩니다. 교량으로 도하 가능합니다.
+          ※ 맵 50타일 이상부터 10단위 조절 / 최대 250×250 (62,500 타일).
         </div>
       </div>
     `;
@@ -227,50 +288,55 @@ class APIKeyModal {
     APIKeyModal._mode       = null;
     APIKeyModal._allyCount  = 5;
     APIKeyModal._enemyCount = 5;
-    APIKeyModal._mapSize    = mapDef;
+    APIKeyModal._mapSize    = DEF_VAL;
+    APIKeyModal._mapIdx     = DEF_IDX;
+
+    // 초기 슬라이더 그라데이션
     APIKeyModal._updateSliderGradient('ally',  5);
     APIKeyModal._updateSliderGradient('enemy', 5);
-    APIKeyModal._updateMapSliderGradient(mapDef, mapMin, mapMax);
+    APIKeyModal._updateMapSliderGradient(DEF_IDX);
     APIKeyModal._updatePreview();
   }
 
-  static _updateMapSliderGradient(val, min, max) {
+  /* ── 맵 슬라이더: 인덱스 → 실제 크기 변환 후 UI 갱신 ── */
+  static _onMapSlider(idxStr) {
+    const idx = parseInt(idxStr);
+    const val = _mapIdxToVal(idx);
+    APIKeyModal._mapIdx  = idx;
+    APIKeyModal._mapSize = val;
+    APIKeyModal._refreshMapUI(val, idx);
+  }
+
+  /* ── ± 버튼: 인덱스 1 이동 ── */
+  static _changeMap(delta) {
+    const newIdx = Math.max(0, Math.min(window._MAP_STEPS_MAX_IDX, APIKeyModal._mapIdx + delta));
+    const val    = _mapIdxToVal(newIdx);
+    APIKeyModal._mapIdx  = newIdx;
+    APIKeyModal._mapSize = val;
+    const slider = document.getElementById('map-size-slider');
+    if (slider) slider.value = newIdx;
+    APIKeyModal._refreshMapUI(val, newIdx);
+  }
+
+  static _refreshMapUI(val, idx) {
+    const dispEl = document.getElementById('map-size-display');
+    const tileEl = document.getElementById('map-tile-count');
+    if (dispEl) dispEl.textContent = `${val}×${val}`;
+    const tiles = val * val;
+    let tileStr = tiles >= 1000 ? `${(tiles / 1000).toFixed(1)}k 타일` : `${tiles} 타일`;
+    if (val >= 100) tileStr += ' ⚠';   // 대형 맵 경고
+    if (tileEl) tileEl.textContent = tileStr;
+    APIKeyModal._updateMapSliderGradient(idx);
+  }
+
+  static _updateMapSliderGradient(idx) {
     const slider = document.getElementById('map-size-slider');
     if (!slider) return;
-    const pct = ((val - min) / (max - min) * 100).toFixed(1);
+    const pct = (idx / window._MAP_STEPS_MAX_IDX * 100).toFixed(2);
     slider.style.setProperty('--slider-pct', pct + '%');
   }
 
-  static _onMapSlider(val) {
-    const n = parseInt(val);
-    APIKeyModal._mapSize = n;
-    const dispEl = document.getElementById('map-size-display');
-    const tileEl = document.getElementById('map-tile-count');
-    if (dispEl) dispEl.textContent = `${n}×${n}`;
-    const tiles = n * n;
-    const warn  = n > 80 ? ' ⚠' : '';
-    if (tileEl) tileEl.textContent = tiles >= 1000 ? `${(tiles/1000).toFixed(1)}k 타일${warn}` : `${tiles} 타일`;
-    const min = CONFIG.MAP_MIN || 10, max = CONFIG.MAP_MAX || 250;
-    APIKeyModal._updateMapSliderGradient(n, min, max);
-  }
-
-  // ± 버튼으로 맵 크기 조절 (소형 ±1, 대형 ±5)
-  static _changeMap(delta) {
-    const min = CONFIG.MAP_MIN || 10, max = CONFIG.MAP_MAX || 250;
-    const step = APIKeyModal._mapSize >= 50 ? 5 : 1;
-    const next = Math.min(max, Math.max(min, APIKeyModal._mapSize + delta * step));
-    APIKeyModal._mapSize = next;
-    const slider = document.getElementById('map-size-slider');
-    if (slider) slider.value = next;
-    const dispEl = document.getElementById('map-size-display');
-    const tileEl = document.getElementById('map-tile-count');
-    if (dispEl) dispEl.textContent = `${next}×${next}`;
-    const tiles = next * next;
-    const warn  = next > 80 ? ' ⚠' : '';
-    if (tileEl) tileEl.textContent = tiles >= 1000 ? `${(tiles/1000).toFixed(1)}k 타일${warn}` : `${tiles} 타일`;
-    APIKeyModal._updateMapSliderGradient(next, min, max);
-  }
-
+  /* ── 병력 슬라이더 ── */
   static _updateSliderGradient(side, val) {
     const slider = document.getElementById(`${side}-slider`);
     if (!slider) return;
@@ -307,6 +373,7 @@ class APIKeyModal {
     if (enemyEl) enemyEl.textContent = `병사 ${e * troop}명`;
   }
 
+  /* ── 모드 선택 ── */
   static _selectMode(mode) {
     APIKeyModal._mode = mode;
     const btnAi      = document.getElementById('btn-ai');
@@ -336,11 +403,12 @@ class APIKeyModal {
     status.textContent='✓ 키 형식 확인됨 — 시작 가능'; status.className='ok'; startBtn.disabled=false;
   }
 
+  /* ── 게임 시작 ── */
   static _start() {
     const mode = APIKeyModal._mode;
     if (!mode) return;
 
-    // ── AI 키 주입 ──
+    // AI 키 주입
     if (mode === 'ai') {
       const key = document.getElementById('api-key-input').value.trim();
       if (key.length >= 20) {
@@ -351,17 +419,17 @@ class APIKeyModal {
       CONFIG.GEMINI_API_KEY = '';
     }
 
-    // ── 맵 크기 주입 ── (핵심: GRID_COLS / GRID_ROWS 덮어씀)
+    // 맵 크기 주입 (비선형 스텝 변환 결과)
     const mapN = APIKeyModal._mapSize || CONFIG.MAP_DEFAULT || 20;
     CONFIG.GRID_COLS = mapN;
     CONFIG.GRID_ROWS = mapN;
 
-    // ── 분대 수 주입 ──
+    // 분대 수 주입
     CONFIG.SQUAD_COUNT  = APIKeyModal._allyCount;
     CONFIG.ENEMY_COUNT  = APIKeyModal._enemyCount;
 
     console.log(
-      `%c⚔ 편성 완료 — 아군 ${CONFIG.SQUAD_COUNT}분대 / 적군 ${CONFIG.ENEMY_COUNT}분대 | 맵 ${mapN}×${mapN}`,
+      `%c⚔ 편성 — 아군 ${CONFIG.SQUAD_COUNT}분대 / 적군 ${CONFIG.ENEMY_COUNT}분대 | 맵 ${mapN}×${mapN}`,
       'color:#39ff8e;font-weight:bold'
     );
 
