@@ -1,15 +1,14 @@
 /* ============================================================
-   GameScene.js v0.7
+   GameScene.js v0.8
    ────────────────────────────────────────────────────────────
-   핵심 변경:
-   1. 유닛 착지 공식 통일
-      · gm.toWorld(col,row).y = tile.height (타일 top 면)
-      · _createMesh:   group.y = tile.height + boxH/2
-      · moveSquadTo:   to.y   = tile.height + boxH/2  (이동 목적지)
-      · _updateOverlapVisuals: 동일 공식
-   2. _drawObjective / fog ghost 등도 tile.height 직접 참조
-   3. _initFog 소형 맵 포그 평면 y = tile.height + 0.04
-   4. 카메라 HEIGHT_MAX 기반으로 시작 높이 추가 보정
+   변경:
+   1. _generateMap() → GridMap의 두 노이즈 레이어(_buildBaseField,
+      _buildRidgeField, _insertRivers)를 사용하도록 위임.
+      GameScene은 더 이상 직접 맵 레이아웃을 생성하지 않고
+      _generateMapLayout()을 통해 base/ridge 노이즈 기반 레이아웃만 반환.
+   2. 레이캐스터 camera.near = TILE_W * 0.05 → 근거리 오차 제거.
+   3. 소형 맵: _onCanvasClick에서 tileMesh 레이캐스팅 정렬 기준
+      → raycaster.params.Line.threshold 축소로 오검출 방지.
    ============================================================ */
 
 const ALLY_COLOR_DEFS = [
@@ -44,49 +43,25 @@ function _makeSquadLabelSprite(text, textCss, bgCss) {
   return new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
 }
 
-/* ── 맵 생성 (지형 + 하천 연결) ───────────────────────────── */
+/* ── 맵 레이아웃 생성 ───────────────────────────────────────
+   v0.8: base/ridge 노이즈로 지형 배치 결정 + 강 삽입.
+   (높이 계산은 GridMap.build() 내부에서 수행)
+────────────────────────────────────────────────────────── */
 function _generateMap() {
-  const rows=CONFIG.GRID_ROWS, cols=CONFIG.GRID_COLS;
-  const map=[];
-  for (let r=0;r<rows;r++) {
-    map[r]=[];
-    for (let c=0;c<cols;c++) {
-      if (r<=1||r>=rows-2){map[r][c]='OPEN';continue;}
-      const rnd=Math.random();
-      if      (rnd<0.22) map[r][c]='FOREST';
-      else if (rnd<0.32) map[r][c]='HILL';
-      else if (rnd<0.38) map[r][c]='VALLEY';
-      else               map[r][c]='OPEN';
-    }
-  }
-  const riverCount=cols>=20?2:1, riverRows=[];
-  for (let ri=0;ri<riverCount;ri++) {
-    const horiz=Math.random()<0.6;
-    if (horiz) {
-      let sr=Math.floor(rows*0.3)+Math.floor(Math.random()*rows*0.4);
-      sr=Math.max(3,Math.min(rows-4,sr));
-      if (riverRows.some(r=>Math.abs(r-sr)<3)) continue;
-      riverRows.push(sr);
-      let cr=sr;
-      for (let c=0;c<cols;c++) {
-        if (cr<=1||cr>=rows-2){cr=sr;continue;}
-        map[cr][c]='RIVER';
-        if (c<cols-1){const d=Math.random();if(d<0.2&&cr>3)cr--;else if(d<0.4&&cr<rows-4)cr++;}
-      }
-      const bc=new Set();
-      while(bc.size<Math.max(1,Math.floor(cols/10)))bc.add(Math.floor(cols*0.2)+Math.floor(Math.random()*cols*0.6));
-      for(const b of bc){for(let r=2;r<rows-2;r++){if(map[r][b]==='RIVER'){map[r][b]='BRIDGE';break;}}}
-    } else {
-      let sc=Math.floor(cols*0.2)+Math.floor(Math.random()*cols*0.6);
-      sc=Math.max(2,Math.min(cols-3,sc));
-      let cc=sc;
-      for(let r=2;r<rows-2;r++){map[r][cc]='RIVER';if(r<rows-3){const d=Math.random();if(d<0.2&&cc>2)cc--;else if(d<0.4&&cc<cols-3)cc++;}}
-      const br=new Set();
-      while(br.size<Math.max(1,Math.floor(rows/10)))br.add(3+Math.floor(Math.random()*(rows-6)));
-      for(const b of br){for(let c=0;c<cols;c++){if(map[b][c]==='RIVER'){map[b][c]='BRIDGE';break;}}}
-    }
-  }
-  return map;
+  const cols = CONFIG.GRID_COLS, rows = CONFIG.GRID_ROWS;
+  const seed  = (Math.random() * 0xffffff) | 0;
+
+  // base/ridge 노이즈는 GridMap의 전역 함수 재사용
+  const base  = _buildBaseField(cols, rows, seed);
+  const ridge = _buildRidgeField(cols, rows, seed ^ 0xdeadbeef);
+
+  // 지형 타입 배치
+  const layout = _generateMapFromFields(base, ridge, cols, rows);
+
+  // 강 경로 삽입
+  _insertRivers(layout, base, cols, rows);
+
+  return layout;
 }
 
 function _calcSpawn(count,side,cols,rows) {
@@ -100,7 +75,7 @@ function _calcSpawn(count,side,cols,rows) {
 }
 function _calcObjective(){return{col:Math.floor(CONFIG.GRID_COLS/2),row:Math.floor(CONFIG.GRID_ROWS/2)};}
 
-/* ── 카메라 파라미터 (맵 크기별 자동 조절) ────────────────── */
+/* ── 카메라 파라미터 ─────────────────────────────────────── */
 function _calcCameraParams(tileW,cols,rows) {
   const mapSize=Math.max(cols,rows), maxWorld=mapSize*tileW;
   let distMul,heightMul,fov;
@@ -166,7 +141,8 @@ class GameScene {
     const fogDensity=mapSize<=20?0.015:mapSize<=60?0.008:0.004;
     this.scene3d.fog=new THREE.FogExp2(0x040604,fogDensity);
 
-    this.camera=new THREE.PerspectiveCamera(fov,w/h,0.1,camDist*6);
+    // ★ near = tileW * 0.05 → 높은 타일 클릭 시 near clipping 오차 제거
+    this.camera=new THREE.PerspectiveCamera(fov,w/h, tileW*0.05, camDist*6);
     this.camera.position.set(0,camHeight,camDist);
     this.camera.lookAt(0,0,0);
 
@@ -189,6 +165,8 @@ class GameScene {
     pl2.position.set(-worldSize*0.3,camHeight,worldSize*0.3); this.scene3d.add(pl2);
 
     this.raycaster=new THREE.Raycaster();
+    // ★ 레이캐스터 정밀도 향상
+    this.raycaster.params.Line = { threshold: 0.01 };
   }
 
   _initSystems() {
@@ -215,7 +193,7 @@ class GameScene {
       this._fogMode='mesh';
       for(let r=0;r<CONFIG.GRID_ROWS;r++) {
         for(let c=0;c<CONFIG.GRID_COLS;c++) {
-          const h =gm.tiles[r][c].height;  // ★ tile.height
+          const h =gm.tiles[r][c].height;
           const wx=c*gm.TILE_W+gm.OFFSET_X;
           const wz=r*gm.TILE_W+gm.OFFSET_Z;
           const mesh=new THREE.Mesh(
@@ -223,7 +201,7 @@ class GameScene {
             new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide})
           );
           mesh.rotation.x=-Math.PI/2;
-          mesh.position.set(wx,h+0.04,wz);  // ★ tile.height 위에 딱 붙임
+          mesh.position.set(wx,h+0.04,wz);
           mesh.renderOrder=3;
           this.scene3d.add(mesh);
           this._fogMeshes[`${c},${r}`]=mesh;
@@ -286,7 +264,6 @@ class GameScene {
         const lk=this.fog.getLastKnown(s.id);
         if(lk){
           const wp=gm.toWorld(lk.col,lk.row);
-          // ★ ghost y = tile.height + 유닛 키 만큼 위
           ghost.position.set(wp.x, wp.y+gm.TILE_W*0.7, wp.z);
           ghost.visible=true;
         }
@@ -298,7 +275,7 @@ class GameScene {
   _drawObjective() {
     const obj=this._DEMO_OBJECTIVE, gm=this.gridMap;
     const wp=gm.toWorld(obj.col,obj.row);
-    const h =gm.tiles[obj.row][obj.col].height;  // ★ tile.height
+    const h =gm.tiles[obj.row][obj.col].height;
     const S =gm.TILE_W*0.45, TW=gm.TILE_W;
     const pts=[
       new THREE.Vector3(wp.x-S,h+0.03,wp.z-S),
@@ -342,14 +319,9 @@ class GameScene {
   }
   _squadColor(squad){return squad.side==='enemy'?ENEMY_COLOR_DEF:ALLY_COLOR_DEFS[(squad.id-1)%ALLY_COLOR_DEFS.length];}
 
-  /* ────────────────────────────────────────────────────────
-     _createMesh — 유닛 착지 핵심
-     group.position.y = tile.height + boxH/2
-     → 박스 bottom 면이 정확히 tile.height (타일 top 면) 에 닿음
-  ──────────────────────────────────────────────────────── */
   _createMesh(squad) {
     const gm   =this.gridMap;
-    const wp   =gm.toWorld(squad.pos.col,squad.pos.row);  // wp.y = tile.height
+    const wp   =gm.toWorld(squad.pos.col,squad.pos.row);
     const cd   =this._squadColor(squad);
     const TW   =gm.TILE_W;
     const label=squad.side==='ally'?`A${squad.id}`:`E${squad.id-CONFIG.SQUAD_COUNT}`;
@@ -376,7 +348,6 @@ class GameScene {
     sprite.raycast=()=>{};
     group.add(sprite);
 
-    // ★ 핵심: tile.height + boxH/2 → 박스 바닥이 타일 top 면에 정확히 착지
     group.position.set(wp.x, wp.y + bh/2, wp.z);
     group.userData={squadId:squad.id};
     this.scene3d.add(group);
@@ -394,7 +365,6 @@ class GameScene {
     return Array.from({length:count},(_,i)=>({dx:i%2===0?-D:D,dz:(Math.floor(i/2)-(Math.ceil(count/2)-1)/2)*D*1.2}));
   }
 
-  /* ── 겹침 시각 처리 — y 좌표 동일 공식 적용 ─────────────── */
   _updateOverlapVisuals() {
     if(!this.scene3d||!this.gridMap) return;
     for(const b of Object.values(this._overlapBadges)){this.scene3d.remove(b);b.material?.map?.dispose();b.material?.dispose();}
@@ -402,8 +372,7 @@ class GameScene {
     const gm=this.gridMap, TW=gm.TILE_W;
 
     const _placeSquads=(list,showBadge)=>{
-      const [col,row]=list[0].pos.col!==undefined?[list[0].pos.col,list[0].pos.row]:[0,0];
-      const base=gm.toWorld(list[0].pos.col,list[0].pos.row);  // base.y = tile.height
+      const base=gm.toWorld(list[0].pos.col,list[0].pos.row);
       if(list.length===1){
         const s=list[0];
         s.mesh.position.set(base.x, base.y+s._boxH/2, base.z);
@@ -420,12 +389,10 @@ class GameScene {
       }
     };
 
-    // 아군
     const allyG={};
     for(const s of this.squads.filter(q=>q.alive&&q.mesh&&q.side==='ally')){const k=`${s.pos.col},${s.pos.row}`;(allyG[k]=allyG[k]||[]).push(s);}
     for(const list of Object.values(allyG)) _placeSquads(list,true);
 
-    // 적군 (배지 없음)
     const enemyG={};
     for(const s of this.squads.filter(q=>q.alive&&q.mesh&&q.side==='enemy')){const k=`${s.pos.col},${s.pos.row}`;(enemyG[k]=enemyG[k]||[]).push(s);}
     for(const list of Object.values(enemyG)) _placeSquads(list,false);
@@ -515,7 +482,7 @@ class GameScene {
     this.pendingCmds.push({type:'move',squadId:squad.id,targetPos});
     squad.ap-=cost;
     this.gridMap.clearHighlights(); this.gridMap.highlightTile(targetPos.col,targetPos.row,0x39ff8e,0.50);
-    chatUI.addLog(`A${squad.id}`,null,`이동 → ${String.fromCharCode(65+(targetPos.col%26))}-${String(targetPos.row+1).padStart(2,'0')}`);
+    chatUI.addLog(`A${squad.id}`,null,`이동 → ${String.fromCharCode(65+(targetPos.col%26))}-${String(targetPos.row+1).padStart(2,'00')}`);
     this._clearSelection();
   }
 
@@ -540,11 +507,6 @@ class GameScene {
     this.pendingCmds.splice(idx,1);
   }
 
-  /* ────────────────────────────────────────────────────────
-     moveSquadTo — 이동 애니메이션
-     from.y / to.y = tile.height + boxH/2 로 통일
-     → 이동 중에도 유닛이 항상 각 타일 높이 위에서 착지
-  ──────────────────────────────────────────────────────── */
   moveSquadTo(squad,targetPos,onDone){
     const gm    =this.gridMap;
     const fromWP=gm.toWorld(squad.pos.col,squad.pos.row);
@@ -629,6 +591,13 @@ class GameScene {
     });
   }
 
+  /* ★ _onCanvasClick — 레이캐스팅 버그 수정
+     소형 맵에서 타일 피킹 시:
+     1. 유닛 박스 먼저 체크 (기존 동일)
+     2. tileMesh(픽킹 평면) 레이캐스팅 —
+        intersectObjects의 결과를 distance 오름차순 정렬 후 첫 번째 선택.
+        이전에는 배열 순서대로 선택해 뒤쪽 타일이 먼저 오는 경우 있었음.
+  */
   _onCanvasClick(e){
     if(this.phase!=='INPUT') return; this._hideSquadPicker();
     const mouse=this._toNDC(e); this.raycaster.setFromCamera(mouse,this.camera);
@@ -642,8 +611,16 @@ class GameScene {
       }
     }
     let col,row;
-    if(this.gridMap._largeMap){const gc=this._raycastToGrid(e);if(!gc)return;col=gc.col;row=gc.row;}
-    else{const tHits=this.raycaster.intersectObjects(this.gridMap.getTileMeshes());if(!tHits.length)return;col=tHits[0].object.userData.col;row=tHits[0].object.userData.row;}
+    if(this.gridMap._largeMap){
+      const gc=this._raycastToGrid(e);if(!gc)return;col=gc.col;row=gc.row;
+    } else {
+      // ★ 수정: distance 기준 정렬 → 가장 가까운(앞쪽) 타일 선택
+      const tHits=this.raycaster.intersectObjects(this.gridMap.getTileMeshes())
+        .sort((a,b)=>a.distance-b.distance);
+      if(!tHits.length)return;
+      col=tHits[0].object.userData.col;
+      row=tHits[0].object.userData.row;
+    }
     if(col===undefined||row===undefined) return;
     const allies=this._getSquadsOnTile(col,row,'ally');
     if(allies.length>1){this._showSquadPicker(allies,e.clientX,e.clientY);return;}
@@ -662,20 +639,18 @@ class GameScene {
     return this.gridMap.worldToGrid(ray.origin.x+t*ray.direction.x, ray.origin.z+t*ray.direction.z);
   }
   _toNDC(e){const r=this.renderer.domElement.getBoundingClientRect();return new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);}
-  _raycastTile(e){this.raycaster.setFromCamera(this._toNDC(e),this.camera);if(this.gridMap._largeMap)return this._raycastToGrid(e);const h=this.raycaster.intersectObjects(this.gridMap.getTileMeshes());return h.length?h[0].object.userData:null;}
+  _raycastTile(e){this.raycaster.setFromCamera(this._toNDC(e),this.camera);if(this.gridMap._largeMap)return this._raycastToGrid(e);const h=this.raycaster.intersectObjects(this.gridMap.getTileMeshes()).sort((a,b)=>a.distance-b.distance);return h.length?h[0].object.userData:null;}
   _onResize(){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.renderer.setSize(w,h);}
 
-  /* ── 이동 애니메이션 처리 ────────────────────────────────── */
   _updateAnimations(delta){
     const done=[];
     for(const a of this._animations){
       a.elapsed+=delta;
       const t=Math.min(a.elapsed/a.duration,1);
-      const ease=t<0.5?2*t*t:-1+(4-2*t)*t;  // easeInOut
+      const ease=t<0.5?2*t*t:-1+(4-2*t)*t;
       if(a.type==='move'){
         a.squad.mesh.position.x=a.from.x+(a.to.x-a.from.x)*ease;
         a.squad.mesh.position.z=a.from.z+(a.to.z-a.from.z)*ease;
-        // y: 출발~도착 높이 선형 보간 + sin 아치 (이동 연출)
         const baseY=a.from.y+(a.to.y-a.from.y)*ease;
         const archH=(this.gridMap?.TILE_W||0.3)*0.6;
         a.squad.mesh.position.y=baseY+Math.sin(Math.PI*t)*archH;
