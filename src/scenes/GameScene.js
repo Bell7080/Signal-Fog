@@ -569,9 +569,11 @@ class GameScene {
       card.classList.toggle('active',this.selectedSquad?.id===squad.id);
     });
     const allyInValley=this.squads.some(s=>s.side==='ally'&&s.alive&&(s.terrain?.id==='valley'||s.terrain?.id==='river'));
-    const tw=document.getElementById('terrain-row'); if(tw)tw.style.display=allyInValley?'':'none';
-    const batEl=document.querySelector('.commander-block .resource-val');
-    if(batEl){const b=this.comms.batteryLevel;batEl.textContent=b+'%';batEl.className='resource-val'+(b<30?' crit':b<50?' warn':'');}
+    const tw=document.getElementById('terrain-warn'); if(tw)tw.style.display=allyInValley?'flex':'none';
+    const batEl=document.getElementById('battery-val');
+    if(batEl&&this.comms){const b=this.comms.batteryLevel;batEl.textContent=b+'%';batEl.className='val'+(b<30?' crit':b<50?' warn':'');}
+    const phEl=document.getElementById('phase-val');
+    if(phEl)phEl.textContent=this.phase==='INPUT'?'명령 입력':this.phase==='EXECUTE'?'실행 중':'종료';
   }
 
   _quality(squad){return this.comms?Math.round(this.comms.calcQuality({terrain:squad.terrain})):100;}
