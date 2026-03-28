@@ -1,17 +1,17 @@
 /* ============================================================
    GridMap.js — Three.js 3D 와이어프레임 그리드
-   v0.2: 250×250 맵 대응
-         - TILE_W: 1.2 유지 (전체 맵 300 Three.js 단위)
-         - 좌표 레이블: 25칸 간격으로만 출력 (성능 최적화)
-         - 타일 메시: 250×250=62,500개 생성
+   v0.3 FIX: 20×20 맵 기준
+         - TILE_W: 1.2 유지
+         - 좌표 레이블: 5칸 간격
+         - 타일 메시: 20×20=400개 (정상 범위)
    ============================================================ */
 
 class GridMap {
 
   constructor(scene) {
     this.scene       = scene;
-    this.cols        = CONFIG.GRID_COLS;   // 250
-    this.rows        = CONFIG.GRID_ROWS;   // 250
+    this.cols        = CONFIG.GRID_COLS;
+    this.rows        = CONFIG.GRID_ROWS;
     this.tiles       = [];
     this._tileMeshes = [];
     this._highlights = [];
@@ -63,7 +63,6 @@ class GridMap {
         const wx   = c * this.TILE_W + this.OFFSET_X;
         const wz   = r * this.TILE_W + this.OFFSET_Z;
 
-        // 박스 메시
         const geo = new THREE.BoxGeometry(this.TILE_W - 0.03, h, this.TILE_W - 0.03);
         const mat = new THREE.MeshLambertMaterial({
           color: this._tileFillColor(tid),
@@ -74,17 +73,14 @@ class GridMap {
         mesh.userData = { col: c, row: r, isTile: true };
         s3.add(mesh);
 
-        // 엣지 (250×250에서는 엣지 생략해도 되지만 중요 지형만 표시)
-        // 성능을 위해 엣지는 특수 지형(VALLEY, HILL)만 적용
-        if (tid !== 'open') {
-          const edgeGeo = new THREE.EdgesGeometry(geo);
-          const edgeMat = new THREE.LineBasicMaterial({
-            color: this._edgeColor(tid), transparent: true, opacity: 0.60,
-          });
-          mesh.add(new THREE.LineSegments(edgeGeo, edgeMat));
-        }
+        // 엣지 (모든 타일에 적용 — 20×20은 400개라 문제없음)
+        const edgeGeo = new THREE.EdgesGeometry(geo);
+        const edgeMat = new THREE.LineBasicMaterial({
+          color: this._edgeColor(tid), transparent: true, opacity: 0.60,
+        });
+        mesh.add(new THREE.LineSegments(edgeGeo, edgeMat));
 
-        // 레이캐스팅 평면
+        // 레이캐스팅용 투명 평면
         const planeGeo = new THREE.PlaneGeometry(this.TILE_W - 0.05, this.TILE_W - 0.05);
         const planeMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
         const plane    = new THREE.Mesh(planeGeo, planeMat);
@@ -97,15 +93,15 @@ class GridMap {
     }
   }
 
-  /* ── 250×250 맵 레이블: 25칸 간격 ── */
+  /* ── 20×20 맵 레이블: 5칸 간격 ── */
   _drawLabels() {
-    const s3    = this.scene.scene3d;
-    const STEP  = 25;   // 25칸마다 레이블 출력
+    const s3   = this.scene.scene3d;
+    const STEP = 5;
 
     for (let c = 0; c < this.cols; c += STEP) {
-      const label = String(c);
+      const label  = String.fromCharCode(65 + c);
       const sprite = _makeTextSprite(label, '#2a5a38');
-      sprite.scale.set(1.8, 1.0, 1);
+      sprite.scale.set(1.4, 0.9, 1);
       sprite.position.set(
         c * this.TILE_W + this.OFFSET_X,
         0.4,
@@ -115,9 +111,9 @@ class GridMap {
     }
 
     for (let r = 0; r < this.rows; r += STEP) {
-      const label = String(r+1).padStart(3, '0');
+      const label  = String(r + 1).padStart(2, '0');
       const sprite = _makeTextSprite(label, '#2a5a38');
-      sprite.scale.set(1.8, 1.0, 1);
+      sprite.scale.set(1.4, 0.9, 1);
       sprite.position.set(
         this.OFFSET_X - this.TILE_W * 1.5,
         0.4,
@@ -170,7 +166,7 @@ class GridMap {
   }
 }
 
-/* ── 공용 텍스트 스프라이트 팩토리 ── */
+/* ── 전역 텍스트 스프라이트 팩토리 (GameScene에서도 참조) ── */
 function _makeTextSprite(text, color = '#39ff8e') {
   const canvas = document.createElement('canvas');
   canvas.width = 128; canvas.height = 64;
@@ -180,5 +176,5 @@ function _makeTextSprite(text, color = '#39ff8e') {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(text, 64, 32);
   const tex = new THREE.CanvasTexture(canvas);
-  return new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
+  return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
 }
