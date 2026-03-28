@@ -12,7 +12,7 @@ var CONFIG = {
 
   /* ── 맵 크기 범위 ── */
   MAP_MIN: 10,
-  MAP_MAX: 30,
+  MAP_MAX: 250,
   MAP_DEFAULT: 20,
 
   /* ── 지형 종류 (예선 MVP 6종) ── */

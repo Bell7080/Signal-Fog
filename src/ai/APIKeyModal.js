@@ -247,22 +247,27 @@ class APIKeyModal {
     const dispEl = document.getElementById('map-size-display');
     const tileEl = document.getElementById('map-tile-count');
     if (dispEl) dispEl.textContent = `${n}×${n}`;
-    if (tileEl) tileEl.textContent = `${n * n} 타일`;
-    const min = CONFIG.MAP_MIN || 10, max = CONFIG.MAP_MAX || 30;
+    const tiles = n * n;
+    const warn  = n > 80 ? ' ⚠' : '';
+    if (tileEl) tileEl.textContent = tiles >= 1000 ? `${(tiles/1000).toFixed(1)}k 타일${warn}` : `${tiles} 타일`;
+    const min = CONFIG.MAP_MIN || 10, max = CONFIG.MAP_MAX || 250;
     APIKeyModal._updateMapSliderGradient(n, min, max);
   }
 
-  // ± 버튼으로 맵 크기 1씩 조절
+  // ± 버튼으로 맵 크기 조절 (소형 ±1, 대형 ±5)
   static _changeMap(delta) {
-    const min = CONFIG.MAP_MIN || 10, max = CONFIG.MAP_MAX || 30;
-    const next = Math.min(max, Math.max(min, APIKeyModal._mapSize + delta));
+    const min = CONFIG.MAP_MIN || 10, max = CONFIG.MAP_MAX || 250;
+    const step = APIKeyModal._mapSize >= 50 ? 5 : 1;
+    const next = Math.min(max, Math.max(min, APIKeyModal._mapSize + delta * step));
     APIKeyModal._mapSize = next;
     const slider = document.getElementById('map-size-slider');
     if (slider) slider.value = next;
     const dispEl = document.getElementById('map-size-display');
     const tileEl = document.getElementById('map-tile-count');
     if (dispEl) dispEl.textContent = `${next}×${next}`;
-    if (tileEl) tileEl.textContent = `${next * next} 타일`;
+    const tiles = next * next;
+    const warn  = next > 80 ? ' ⚠' : '';
+    if (tileEl) tileEl.textContent = tiles >= 1000 ? `${(tiles/1000).toFixed(1)}k 타일${warn}` : `${tiles} 타일`;
     APIKeyModal._updateMapSliderGradient(next, min, max);
   }
 

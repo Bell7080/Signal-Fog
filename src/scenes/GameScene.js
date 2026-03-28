@@ -288,22 +288,36 @@ class GameScene {
   _initFog() {
     this.fog = new FogOfWar(this.gridMap);
     const gm = this.gridMap;
-    for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
-      for (let c = 0; c < CONFIG.GRID_COLS; c++) {
-        const h  = gm._tileHeight(gm.tiles[r][c].terrain.id);
-        const wx = c * gm.TILE_W + gm.OFFSET_X;
-        const wz = r * gm.TILE_W + gm.OFFSET_Z;
-        const mesh = new THREE.Mesh(
-          new THREE.PlaneGeometry(gm.TILE_W, gm.TILE_W),
-          new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })
-        );
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.position.set(wx, h + 0.06, wz);
-        mesh.renderOrder = 3;
-        this.scene3d.add(mesh);
-        this._fogMeshes[`${c},${r}`] = mesh;
+    const largeMap = gm._largeMap;
+
+    if (largeMap) {
+      // ── 대형 맵: 포그를 단일 InstancedMesh로 처리 ──
+      // 타일마다 개별 PlaneGeometry를 만들면 62,500개 → 브라우저 멈춤
+      // 대신 _updateFog에서 fogCanvas 텍스처로 표현
+      this._fogMode = 'canvas';
+      this._initFogCanvas();
+    } else {
+      // ── 소형 맵: 기존 방식 (타일별 투명 평면) ──
+      this._fogMode = 'mesh';
+      for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
+        for (let c = 0; c < CONFIG.GRID_COLS; c++) {
+          const h  = gm._tileHeight(gm.tiles[r][c].terrain.id);
+          const wx = c * gm.TILE_W + gm.OFFSET_X;
+          const wz = r * gm.TILE_W + gm.OFFSET_Z;
+          const mesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(gm.TILE_W, gm.TILE_W),
+            new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })
+          );
+          mesh.rotation.x = -Math.PI / 2;
+          mesh.position.set(wx, h + 0.06, wz);
+          mesh.renderOrder = 3;
+          this.scene3d.add(mesh);
+          this._fogMeshes[`${c},${r}`] = mesh;
+        }
       }
     }
+
+    // 적군 ghost 스프라이트 (포그 밖 마지막 위치 표시)
     for (const s of this.squads.filter(q => q.side === 'enemy')) {
       const g = _makeTextSprite('?', '#882222');
       g.scale.set(gm.TILE_W * 1.2, gm.TILE_W * 1.2, 1);
@@ -313,28 +327,84 @@ class GameScene {
     }
   }
 
+  _initFogCanvas() {
+    // 대형 맵: 포그를 캔버스 텍스처 + 단일 PlaneGeometry로 처리
+    const gm   = this.gridMap;
+    const cols = CONFIG.GRID_COLS, rows = CONFIG.GRID_ROWS;
+    // 텍스처 해상도: 타일당 2px
+    const RES  = 2;
+    const cw   = cols * RES, ch = rows * RES;
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    this._fogCtx    = canvas.getContext('2d');
+    this._fogTex    = new THREE.CanvasTexture(canvas);
+    this._fogResRCP = RES;
+
+    // 맵 전체를 덮는 단일 평면
+    const totalW = cols * gm.TILE_W;
+    const totalH = rows * gm.TILE_W;
+    const fogGeo = new THREE.PlaneGeometry(totalW, totalH);
+    const fogMat = new THREE.MeshBasicMaterial({
+      map: this._fogTex, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const fogPlane = new THREE.Mesh(fogGeo, fogMat);
+    fogPlane.rotation.x = -Math.PI / 2;
+    fogPlane.position.set(
+      gm.OFFSET_X + totalW / 2 - gm.TILE_W / 2,
+      0.3,
+      gm.OFFSET_Z + totalH / 2 - gm.TILE_W / 2
+    );
+    fogPlane.renderOrder = 3;
+    this.scene3d.add(fogPlane);
+    this._fogPlane = fogPlane;
+  }
+
   _updateFog() {
     if (!this.fog) return;
     this.fog.computeVisible(this.squads.filter(s => s.side === 'ally' && s.alive));
     const gm = this.gridMap;
-    for (let r = 0; r < CONFIG.GRID_ROWS; r++)
-      for (let c = 0; c < CONFIG.GRID_COLS; c++) {
-        const m = this._fogMeshes[`${c},${r}`];
-        if (m) m.material.opacity = this.fog.isVisible(c, r) ? 0 : 0.76;
-      }
+
+    if (this._fogMode === 'canvas') {
+      // ── 대형 맵: 캔버스 텍스처로 포그 업데이트 ──
+      const ctx = this._fogCtx;
+      const RES = this._fogResRCP;
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      ctx.fillStyle = 'rgba(0,0,0,0.76)';
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      // 시야 내 타일은 투명하게 지움
+      for (let r = 0; r < CONFIG.GRID_ROWS; r++)
+        for (let c = 0; c < CONFIG.GRID_COLS; c++)
+          if (this.fog.isVisible(c, r))
+            ctx.clearRect(c * RES, r * RES, RES, RES);
+      this._fogTex.needsUpdate = true;
+    } else {
+      // ── 소형 맵: 타일별 평면 투명도 ──
+      for (let r = 0; r < CONFIG.GRID_ROWS; r++)
+        for (let c = 0; c < CONFIG.GRID_COLS; c++) {
+          const m = this._fogMeshes[`${c},${r}`];
+          if (m) m.material.opacity = this.fog.isVisible(c, r) ? 0 : 0.76;
+        }
+    }
+
+    // 적군 메시 가시성 + ghost 처리
     for (const s of this.squads.filter(q => q.side === 'enemy')) {
       const inSight = this.fog.isVisible(s.pos.col, s.pos.row);
+      // ★ 핵심: 적군 메시는 포그 시야 안에 있을 때만 표시
       if (s.mesh) s.mesh.visible = s.alive && inSight;
       const ghost = this._ghostMeshes[s.id]; if (!ghost) continue;
-      if (inSight && s.alive) { this.fog.updateLastKnown(s.id, s.pos); ghost.visible = false; }
-      else if (s.alive) {
+      if (inSight && s.alive) {
+        this.fog.updateLastKnown(s.id, s.pos);
+        ghost.visible = false;
+      } else if (s.alive) {
         const lk = this.fog.getLastKnown(s.id);
         if (lk) {
           const wp = gm.toWorld(lk.col, lk.row);
           ghost.position.set(wp.x, wp.y + 0.6, wp.z);
           ghost.visible = true;
         }
-      } else ghost.visible = false;
+      } else {
+        ghost.visible = false;
+      }
     }
   }
 
@@ -771,6 +841,8 @@ class GameScene {
   _onCanvasClick(e) {
     if (this.phase !== 'INPUT') return; this._hideSquadPicker();
     const mouse = this._toNDC(e); this.raycaster.setFromCamera(mouse, this.camera);
+
+    // 1. 유닛 클릭 체크 (공통)
     const hits = this.raycaster.intersectObjects(this.squads.filter(s => s.alive && s.boxMesh).map(s => s.boxMesh), false);
     if (hits.length > 0) {
       const { squadId } = hits[0].object.userData;
@@ -784,9 +856,22 @@ class GameScene {
         if (this.selectedSquad) { this._issueAttack(this.selectedSquad, clicked); return; }
       }
     }
-    const tHits = this.raycaster.intersectObjects(this.gridMap.getTileMeshes());
-    if (tHits.length === 0) return;
-    const { col, row } = tHits[0].object.userData;
+
+    // 2. 타일 클릭 — 대형 맵은 수학적 역산, 소형 맵은 레이캐스팅
+    let col, row;
+    if (this.gridMap._largeMap) {
+      // 대형 맵: 레이와 y=0 평면 교차점으로 그리드 좌표 계산
+      const gridCoord = this._raycastToGrid(e);
+      if (!gridCoord) return;
+      col = gridCoord.col; row = gridCoord.row;
+    } else {
+      const tHits = this.raycaster.intersectObjects(this.gridMap.getTileMeshes());
+      if (tHits.length === 0) return;
+      col = tHits[0].object.userData.col;
+      row = tHits[0].object.userData.row;
+    }
+
+    if (col === undefined || row === undefined) return;
     const allies = this._getSquadsOnTile(col, row, 'ally');
     if (allies.length > 1) { this._showSquadPicker(allies, e.clientX, e.clientY); return; }
     if (allies.length === 1) { this.selectSquad(allies[0]); return; }
@@ -796,12 +881,27 @@ class GameScene {
     this._issueMove(this.selectedSquad, { col, row });
   }
 
+  // 대형 맵: 레이와 y=0 수평면 교차 → 그리드 좌표
+  _raycastToGrid(e) {
+    this.raycaster.setFromCamera(this._toNDC(e), this.camera);
+    const ray = this.raycaster.ray;
+    if (Math.abs(ray.direction.y) < 0.0001) return null;
+    const t = -ray.origin.y / ray.direction.y;
+    if (t < 0) return null;
+    const wx = ray.origin.x + t * ray.direction.x;
+    const wz = ray.origin.z + t * ray.direction.z;
+    return this.gridMap.worldToGrid(wx, wz);
+  }
+
   _toNDC(e) {
     const r = this.renderer.domElement.getBoundingClientRect();
     return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   }
   _raycastTile(e) {
     this.raycaster.setFromCamera(this._toNDC(e), this.camera);
+    if (this.gridMap._largeMap) {
+      return this._raycastToGrid(e);
+    }
     const h = this.raycaster.intersectObjects(this.gridMap.getTileMeshes());
     return h.length ? h[0].object.userData : null;
   }
