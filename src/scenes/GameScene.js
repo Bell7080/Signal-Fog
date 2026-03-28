@@ -1,10 +1,10 @@
 /* ============================================================
    GameScene.js — Three.js 3D 메인 게임 씬
-   v0.2: 250×250 맵 확장 + 동적 분대 수 지원
-         - 분대 스폰: 아군/적군 수에 따라 균등 배치
-         - 카메라: 넓은 맵에 맞게 높이·거리 조정
-         - 좌표 레이블: 성능상 10칸 간격으로 출력
-         - 목표 지점: 맵 중앙으로 이동
+   v0.2 FIX:
+     - 포그 오브 워: 62,500개 개별 메시 → InstancedMesh 1개로 대체
+     - _makeTextSprite 중복 선언 제거 (GridMap.js에서 전역 정의)
+     - _makeSquadLabelSprite만 유지
+     - 좌표 레이블 25칸 간격 유지
    ============================================================ */
 
 /* ── 분대별 고유 색상 (10색 팔레트) ── */
@@ -41,27 +41,15 @@ function _makeSquadLabelSprite(text, textCss, bgCss) {
   return new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
 }
 
-function _makeTextSprite(text, color='#39ff8e') {
-  const cv=document.createElement('canvas'); cv.width=128; cv.height=64;
-  const ctx=cv.getContext('2d');
-  ctx.fillStyle=color; ctx.font='bold 38px "Share Tech Mono", monospace';
-  ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(text,64,32);
-  const tex=new THREE.CanvasTexture(cv);
-  return new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
-}
-
 /* ── 맵 생성 (250×250) ── */
 function _generateMap() {
   const rows=CONFIG.GRID_ROWS, cols=CONFIG.GRID_COLS, map=[];
-  // 노이즈 기반 지형 생성 (시드값 기반 의사랜덤)
   for (let r=0; r<rows; r++) {
     const row=[];
     for (let c=0; c<cols; c++) {
       let t;
-      if (r<=2 || r>=rows-3) { t='OPEN'; }               // 스폰존 개활지
+      if (r<=2 || r>=rows-3) { t='OPEN'; }
       else {
-        // 계곡 띠: 맵 1/3, 2/3 지점에 대각 방향으로 배치
         const mid1=Math.floor(rows*0.33), mid2=Math.floor(rows*0.66);
         const inV1 = Math.abs(r-mid1) <= 2;
         const inV2 = Math.abs(r-mid2) <= 2;
@@ -88,7 +76,6 @@ function _calcSpawn(count, side, cols, rows) {
   const step = Math.floor(cols / (count+1));
   for (let i=0; i<count; i++) {
     const col = Math.min(step*(i+1), cols-2);
-    // 아군 id: 1~count / 적군 id: count+1 ~ count*2
     const id = side==='ally' ? (i+1) : (CONFIG.SQUAD_COUNT + i + 1);
     result.push({ id, col, row: spawnRow });
   }
@@ -115,7 +102,11 @@ class GameScene {
     this.phase='INPUT';
     this.turnManager=this.comms=this.combat=this.enemyAI=null;
     this._animations=[]; this._lastTime=null; this._mouseDownPos=null;
-    this.fog=null; this._fogMeshes={}; this._ghostMeshes={};
+    this.fog=null;
+    // ★ FIX: InstancedMesh 방식으로 교체
+    this._fogInstancedMesh=null;
+    this._fogMatrix=[];
+    this._ghostMeshes={};
     this._overlapBadges={};
     this._DEMO_OBJECTIVE = _calcObjective();
     this._pickerOutsideHandler=(e)=>{
@@ -150,10 +141,8 @@ class GameScene {
   _initScene() {
     const w=this.container.clientWidth||512, h=this.container.clientHeight||512;
     this.scene3d=new THREE.Scene();
-    // 250×250 맵은 안개 밀도를 줄임
     this.scene3d.fog=new THREE.FogExp2(0x040604, 0.006);
     this.camera=new THREE.PerspectiveCamera(50, w/h, 0.1, 800);
-    // 초기 카메라: 맵 중앙 상공
     this.camera.position.set(0, 120, 100);
     this.camera.lookAt(0, 0, 0);
 
@@ -189,46 +178,89 @@ class GameScene {
     this._updateFog();
   }
 
+  /* ★ FIX: 포그를 InstancedMesh 1개로 처리 — 62,500개 개별 메시 생성 제거 */
   _initFog() {
-    this.fog=new FogOfWar(this.gridMap);
-    const gm=this.gridMap;
-    // 250×250 = 62,500 타일 → 포그 메시 일괄 생성 (성능 최적화: InstancedMesh 대신 단순 메시)
-    for (let r=0; r<CONFIG.GRID_ROWS; r++) {
-      for (let c=0; c<CONFIG.GRID_COLS; c++) {
-        const h  = gm._tileHeight(gm.tiles[r][c].terrain.id);
-        const wx = c*gm.TILE_W+gm.OFFSET_X, wz=r*gm.TILE_W+gm.OFFSET_Z;
-        const mesh=new THREE.Mesh(
-          new THREE.PlaneGeometry(gm.TILE_W, gm.TILE_W),
-          new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide})
-        );
-        mesh.rotation.x=-Math.PI/2; mesh.position.set(wx,h+0.06,wz); mesh.renderOrder=3;
-        this.scene3d.add(mesh); this._fogMeshes[`${c},${r}`]=mesh;
+    this.fog = new FogOfWar(this.gridMap);
+    const gm = this.gridMap;
+    const total = CONFIG.GRID_COLS * CONFIG.GRID_ROWS;
+
+    const planeGeo = new THREE.PlaneGeometry(gm.TILE_W, gm.TILE_W);
+    const planeMat = new THREE.MeshBasicMaterial({
+      color: 0x000000, transparent: true, opacity: 0.76,
+      depthWrite: false, side: THREE.DoubleSide,
+    });
+
+    this._fogInstancedMesh = new THREE.InstancedMesh(planeGeo, planeMat, total);
+    this._fogInstancedMesh.renderOrder = 3;
+
+    const dummy = new THREE.Object3D();
+    this._fogMatrix = new Array(total);
+
+    for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
+      for (let c = 0; c < CONFIG.GRID_COLS; c++) {
+        const idx = r * CONFIG.GRID_COLS + c;
+        const h   = gm._tileHeight(gm.tiles[r][c].terrain.id);
+        const wx  = c * gm.TILE_W + gm.OFFSET_X;
+        const wz  = r * gm.TILE_W + gm.OFFSET_Z;
+        dummy.position.set(wx, h + 0.06, wz);
+        dummy.rotation.x = -Math.PI / 2;
+        dummy.updateMatrix();
+        this._fogInstancedMesh.setMatrixAt(idx, dummy.matrix);
+        this._fogMatrix[idx] = { wx, h, wz };
       }
     }
+
+    this._fogInstancedMesh.instanceMatrix.needsUpdate = true;
+    this.scene3d.add(this._fogInstancedMesh);
+
+    // 적군 ghost 스프라이트 (변경 없음)
     for (const s of this.squads.filter(q=>q.side==='enemy')) {
-      const g=_makeTextSprite('?','#882222'); g.scale.set(1.4,1.4,1); g.visible=false;
-      this.scene3d.add(g); this._ghostMeshes[s.id]=g;
+      const g = _makeTextSprite('?', '#882222');
+      g.scale.set(1.4, 1.4, 1); g.visible = false;
+      this.scene3d.add(g); this._ghostMeshes[s.id] = g;
     }
   }
 
+  /* ★ FIX: InstancedMesh의 인스턴스 색상(opacity)으로 포그 갱신 */
   _updateFog() {
-    if (!this.fog) return;
-    this.fog.computeVisible(this.squads.filter(s=>s.side==='ally'&&s.alive));
-    const gm=this.gridMap;
-    for (let r=0; r<CONFIG.GRID_ROWS; r++)
-      for (let c=0; c<CONFIG.GRID_COLS; c++) {
-        const m=this._fogMeshes[`${c},${r}`];
-        if (m) m.material.opacity=this.fog.isVisible(c,r)?0:0.76;
+    if (!this.fog || !this._fogInstancedMesh) return;
+    this.fog.computeVisible(this.squads.filter(s => s.side==='ally' && s.alive));
+    const gm = this.gridMap;
+
+    // InstancedMesh는 opacity를 인스턴스별로 바꿀 수 없으므로
+    // 보이는 타일의 인스턴스를 scale=0으로 숨기고 안 보이는 것은 scale=1로 표시
+    const dummy = new THREE.Object3D();
+    let needsUpdate = false;
+
+    for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
+      for (let c = 0; c < CONFIG.GRID_COLS; c++) {
+        const idx     = r * CONFIG.GRID_COLS + c;
+        const visible = this.fog.isVisible(c, r);
+        const { wx, h, wz } = this._fogMatrix[idx];
+
+        dummy.position.set(wx, h + 0.06, wz);
+        dummy.rotation.x = -Math.PI / 2;
+        // 보이는 타일(아군 시야 내) → 포그 숨김(scale 0), 보이지 않으면 표시(scale 1)
+        const s = visible ? 0.001 : 1.0;
+        dummy.scale.set(s, s, s);
+        dummy.updateMatrix();
+        this._fogInstancedMesh.setMatrixAt(idx, dummy.matrix);
+        needsUpdate = true;
       }
-    for (const s of this.squads.filter(q=>q.side==='enemy')) {
-      const inSight=this.fog.isVisible(s.pos.col,s.pos.row);
-      if (s.mesh) s.mesh.visible=s.alive&&inSight;
-      const ghost=this._ghostMeshes[s.id]; if (!ghost) continue;
-      if (inSight&&s.alive) { this.fog.updateLastKnown(s.id,s.pos); ghost.visible=false; }
+    }
+
+    if (needsUpdate) this._fogInstancedMesh.instanceMatrix.needsUpdate = true;
+
+    // 적군 ghost 처리
+    for (const s of this.squads.filter(q => q.side==='enemy')) {
+      const inSight = this.fog.isVisible(s.pos.col, s.pos.row);
+      if (s.mesh) s.mesh.visible = s.alive && inSight;
+      const ghost = this._ghostMeshes[s.id]; if (!ghost) continue;
+      if (inSight && s.alive) { this.fog.updateLastKnown(s.id, s.pos); ghost.visible=false; }
       else if (s.alive) {
-        const lk=this.fog.getLastKnown(s.id);
-        if (lk) { const wp=gm.toWorld(lk.col,lk.row); ghost.position.set(wp.x,wp.y+0.6,wp.z); ghost.visible=true; }
-      } else ghost.visible=false;
+        const lk = this.fog.getLastKnown(s.id);
+        if (lk) { const wp=gm.toWorld(lk.col, lk.row); ghost.position.set(wp.x, wp.y+0.6, wp.z); ghost.visible=true; }
+      } else ghost.visible = false;
     }
   }
 
@@ -260,13 +292,11 @@ class GameScene {
     for (const d of allySpawns)  { const s=this._makeSquad(d.id,'ally', d.col,d.row); this.squads.push(s); this._createMesh(s); }
     for (const d of enemySpawns) { const s=this._makeSquad(d.id,'enemy',d.col,d.row); this.squads.push(s); this._createMesh(s); }
 
-    // 좌측 패널 동적 생성
     this._buildSquadPanel();
     this._syncPanel();
     this._updateOverlapVisuals();
   }
 
-  /* ── 좌측 패널 분대 카드 동적 생성 ── */
   _buildSquadPanel() {
     const list=document.getElementById('squad-list');
     if (!list) return;
@@ -313,7 +343,6 @@ class GameScene {
     const label=isAlly?`A${squad.id}`:`E${squad.id-CONFIG.SQUAD_COUNT}`;
     const group=new THREE.Group();
 
-    // 250×250에서 잘 보이도록 박스 크기 1.0으로 확대
     const geo=new THREE.BoxGeometry(1.0, 0.7, 1.0);
     const mat=new THREE.MeshLambertMaterial({color:cd.hex,transparent:true,opacity:0.90});
     const box=new THREE.Mesh(geo,mat);
@@ -339,7 +368,6 @@ class GameScene {
     squad.mesh=group; squad.mat=mat; squad.boxMesh=box; squad._colDef=cd;
   }
 
-  /* ────────── 겹침 ────────── */
   _getSquadsOnTile(col,row,side=null) {
     return this.squads.filter(s=>s.alive&&s.pos.col===col&&s.pos.row===row&&(side===null||s.side===side));
   }
@@ -379,7 +407,6 @@ class GameScene {
     }
   }
 
-  /* ────────── 피커 팝업 ────────── */
   _showSquadPicker(squads,clientX,clientY) {
     const picker=document.getElementById('squad-picker');
     if (!picker) return;
@@ -433,7 +460,6 @@ class GameScene {
     document.removeEventListener('click',this._pickerOutsideHandler);
   }
 
-  /* ────────── 분대 선택 ────────── */
   selectSquad(squad) {
     if (this.phase!=='INPUT'||!squad.alive) return;
     this._hideSquadPicker();
@@ -484,7 +510,6 @@ class GameScene {
     this._syncPanel();
   }
 
-  /* ────────── 명령: 이동 ────────── */
   _issueMove(squad,targetPos) {
     const dist=Math.abs(targetPos.col-squad.pos.col)+Math.abs(targetPos.row-squad.pos.row);
     if (dist===0) return;
@@ -532,7 +557,6 @@ class GameScene {
     this._clearSelection();
   }
 
-  /* ────────── 명령: 사격 ────────── */
   _issueAttack(squad,target) {
     if (!this.combat.inRange(squad.pos,target.pos)) { chatUI.addLog('SYSTEM',null,`사거리 밖(최대${CONFIG.RIFLE_RANGE}타일)`,'system'); return; }
     if (squad.ap<1) { chatUI.addLog('SYSTEM',null,'AP 부족 — 사격 불가','system'); return; }
@@ -564,7 +588,6 @@ class GameScene {
     this.pendingCmds.splice(idx,1);
   }
 
-  /* ────────── 이동 애니메이션 ────────── */
   moveSquadTo(squad,targetPos,onDone) {
     const from={x:squad.mesh.position.x,y:squad.mesh.position.y,z:squad.mesh.position.z};
     const to=this.gridMap.toWorld(targetPos.col,targetPos.row);
@@ -580,7 +603,6 @@ class GameScene {
     });
   }
 
-  /* ────────── 교전 ────────── */
   applyHit(attacker,target) {
     const terrain=this.gridMap.tiles[target.pos.row][target.pos.col].terrain;
     const hit=this.combat.rollHit(attacker.pos,target.pos,terrain);
@@ -602,7 +624,6 @@ class GameScene {
     } else { chatUI.addLog(aLbl,null,'사격 — 빗나감'); }
   }
 
-  /* ────────── 패널 동기화 ────────── */
   _syncPanel() {
     const allies=this.squads.filter(s=>s.side==='ally');
     document.querySelectorAll('.squad-card').forEach((card)=>{
@@ -640,7 +661,6 @@ class GameScene {
 
   _quality(squad) { return this.comms?Math.round(this.comms.calcQuality({terrain:squad.terrain})):100; }
 
-  /* ────────── 입력 ────────── */
   _setupInput() {
     const cv=this.renderer.domElement;
     cv.style.pointerEvents='auto';
