@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SIGNAL-FOG // 사지방 전술 시뮬레이터</title>
+  <title>SIGNAL-FOG // KCTC 전술 시뮬레이터</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -94,6 +94,7 @@
       display: grid;
       grid-template-columns: 220px 1fr 240px;
       overflow: hidden;
+      min-height: 0; /* flex child가 overflow 되지 않도록 */
     }
 
     /* ─── PANEL 공통 ─── */
@@ -155,6 +156,8 @@
       display: flex; align-items: center; justify-content: center;
       background: #040604;
       overflow: hidden;
+      /* ★ FIX: 높이가 반드시 있어야 renderer가 올바른 크기로 초기화됨 */
+      min-height: 0;
     }
 
     /* 부팅 화면 */
@@ -176,10 +179,12 @@
     .boot-bar-wrap { width:420px; height:3px; background:var(--col-border); }
     #boot-bar { height:100%; width:0%; background:var(--col-green); box-shadow:0 0 8px var(--col-green); transition:width .4s ease; }
 
-    /* Three.js 캔버스 */
+    /* Three.js 캔버스 — 반드시 100% 채워야 맵이 보임 */
     #game-canvas-container canvas {
-      display:block; position:absolute; top:0; left:0;
-      width:100% !important; height:100% !important;
+      display: block !important;
+      position: absolute !important;
+      top: 0 !important; left: 0 !important;
+      width: 100% !important; height: 100% !important;
     }
 
     /* HUD 오버레이 */
@@ -194,9 +199,7 @@
     }
     .hud-chip .val { color:var(--col-green); }
 
-    /* ══════════════════════════════════════
-       SQUAD PICKER — 겹침 분대 선택 팝업
-       ══════════════════════════════════════ */
+    /* Squad Picker */
     #squad-picker {
       display: none;
       position: absolute;
@@ -208,99 +211,31 @@
       pointer-events: auto;
       overflow: hidden;
     }
-
-    /* 타이틀 바 */
     .picker-title {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 9px 13px 8px;
-      font-size: .6rem;
-      letter-spacing: .16em;
-      color: var(--col-amber);
-      background: rgba(255,184,77,.08);
-      border-bottom: 1px solid rgba(255,184,77,.22);
-      text-transform: uppercase;
+      display: flex; align-items: center; gap: 7px;
+      padding: 9px 13px 8px; font-size: .6rem; letter-spacing: .16em;
+      color: var(--col-amber); background: rgba(255,184,77,.08);
+      border-bottom: 1px solid rgba(255,184,77,.22); text-transform: uppercase;
     }
     .picker-icon { font-size: .85rem; }
-
-    /* 분대 카드 */
     .picker-card {
-      display: flex;
-      align-items: stretch;
-      cursor: pointer;
-      border-bottom: 1px solid var(--col-border);
-      transition: background .15s;
+      display: flex; align-items: stretch; cursor: pointer;
+      border-bottom: 1px solid var(--col-border); transition: background .15s;
     }
     .picker-card:hover { background: rgba(255,255,255,.05); }
     .picker-card:last-of-type { border-bottom: none; }
-
-    /* 왼쪽 색상 스트라이프 */
-    .picker-card-stripe {
-      width: 4px;
-      flex-shrink: 0;
-      background: var(--col-green); /* JS에서 덮어씀 */
-    }
-
-    /* 카드 본문 */
-    .picker-card-content {
-      flex: 1;
-      padding: 9px 10px 8px 11px;
-      min-width: 0;
-    }
-    .picker-card-header {
-      display: flex; align-items: center; gap: 7px; margin-bottom: 5px;
-    }
-    .picker-card-name {
-      font-size: .72rem;
-      letter-spacing: .1em;
-      font-weight: bold;
-    }
-    .picker-cmd-tag {
-      font-size: .52rem;
-      letter-spacing: .06em;
-      color: var(--col-amber);
-      border: 1px solid var(--col-amber);
-      padding: 1px 5px;
-    }
-    .picker-card-row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .picker-stat-item {
-      font-size: .58rem;
-      color: var(--col-text-dim);
-      letter-spacing: .04em;
-      white-space: nowrap;
-    }
+    .picker-card-stripe { width: 4px; flex-shrink: 0; background: var(--col-green); }
+    .picker-card-content { flex: 1; padding: 9px 10px 8px 11px; min-width: 0; }
+    .picker-card-header { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+    .picker-card-name { font-size: .72rem; letter-spacing: .1em; font-weight: bold; }
+    .picker-cmd-tag { font-size: .52rem; letter-spacing: .06em; color: var(--col-amber); border: 1px solid var(--col-amber); padding: 1px 5px; }
+    .picker-card-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .picker-stat-item { font-size: .58rem; color: var(--col-text-dim); letter-spacing: .04em; white-space: nowrap; }
     .picker-stat-item b { color: var(--col-text); }
-
-    /* 화살표 */
-    .picker-card-arrow {
-      display: flex; align-items: center;
-      padding: 0 10px;
-      font-size: .7rem;
-      color: var(--col-text-dim);
-      opacity: 0;
-      transition: opacity .15s;
-    }
+    .picker-card-arrow { display: flex; align-items: center; padding: 0 10px; font-size: .7rem; color: var(--col-text-dim); opacity: 0; transition: opacity .15s; }
     .picker-card:hover .picker-card-arrow { opacity: 1; color: var(--col-green); }
-
-    /* 선택된 카드 강조 */
     .picker-card-selected { background: rgba(57,255,142,.06); }
-
-    /* 닫기 버튼 */
-    .picker-close {
-      display: flex; align-items: center; justify-content: center;
-      padding: 7px;
-      font-size: .58rem;
-      letter-spacing: .1em;
-      color: var(--col-text-dim);
-      cursor: pointer;
-      border-top: 1px solid var(--col-border);
-      transition: color .15s, background .15s;
-    }
+    .picker-close { display: flex; align-items: center; justify-content: center; padding: 7px; font-size: .58rem; letter-spacing: .1em; color: var(--col-text-dim); cursor: pointer; border-top: 1px solid var(--col-border); transition: color .15s, background .15s; }
     .picker-close:hover { color: var(--col-red); background: rgba(255,68,68,.06); }
 
     /* ─── RIGHT PANEL ─── */
@@ -402,7 +337,7 @@
   <header id="header">
     <div class="header-title">
       <h1>SIGNAL-FOG</h1>
-      <span>KCTC 과학화전투 시뮬레이터 // v0.2</span>
+      <span>KCTC 과학화전투 시뮬레이터 // v0.4</span>
     </div>
     <div class="header-status">
       <span><span class="status-dot" id="dot-comms"></span> COMMS</span>
@@ -414,14 +349,10 @@
   <!-- ── MAIN LAYOUT ── -->
   <div id="main-layout">
 
-    <!-- ── LEFT PANEL — 분대 현황 ── -->
+    <!-- ── LEFT PANEL ── -->
     <aside class="panel" id="panel-left">
       <div class="panel-title">▸ 분대 현황</div>
-      <div class="squad-list" id="squad-list">
-        <!-- GameScene._buildSquadPanel()에서 동적으로 생성됨 -->
-      </div>
-
-      <!-- 대대장 공용 자원 -->
+      <div class="squad-list" id="squad-list"></div>
       <div class="commander-block">
         <div class="panel-title" style="border:none;padding:0 0 7px 0;font-size:.55rem;">COMMANDER</div>
         <div class="resource-row">
@@ -438,49 +369,39 @@
       </div>
     </aside>
 
-    <!-- ── CENTER (Three.js 3D 맵) ── -->
+    <!-- ── CENTER (Three.js) ── -->
     <div id="game-canvas-container">
-
-      <!-- 부팅 화면 -->
       <div id="boot-screen">
         <div class="boot-logo">SIGNAL<br>FOG</div>
         <div class="boot-sub"><span>육군창업경진대회 2026 // 팀 LNG</span></div>
         <div id="boot-log"></div>
         <div class="boot-bar-wrap"><div id="boot-bar"></div></div>
       </div>
-
-      <!-- HUD 오버레이 -->
       <div id="hud-overlay">
         <div class="hud-chip">TURN <span class="val" id="hud-turn">01</span></div>
         <div class="hud-chip">GRID <span class="val" id="hud-coord">--</span></div>
         <div class="hud-chip">PHASE <span class="val" id="hud-phase">준비</span></div>
       </div>
-
-      <!-- 겹침 분대 선택 피커 -->
       <div id="squad-picker"></div>
-
-    </div><!-- /game-canvas-container -->
+    </div>
 
     <!-- ── RIGHT PANEL ── -->
     <aside class="panel" id="panel-right">
       <div class="panel-title">▸ 통신 채널</div>
-
       <div class="channel-tabs">
         <div class="ch-tab active" onclick="switchChannel(this,'지휘')">지휘</div>
         <div class="ch-tab" onclick="switchChannel(this,'소대')">소대</div>
         <div class="ch-tab" onclick="switchChannel(this,'분대')">분대</div>
         <div class="ch-tab" onclick="switchChannel(this,'LOG')">LOG</div>
       </div>
-
       <div id="chat-log"></div>
-
       <div id="chat-input-area">
         <input id="chat-input" type="text" placeholder="무전 내용 입력 / SEND" maxlength="80" />
         <button id="chat-send" onclick="sendChat()">SEND</button>
       </div>
     </aside>
 
-  </div><!-- /main-layout -->
+  </div>
 
   <!-- ── FOOTER ── -->
   <footer id="footer">
@@ -508,13 +429,14 @@
     </div>
   </div>
 
-</div><!-- /app-wrapper -->
+</div>
 
-<!-- ── 게임 소스 로드 ──
-     순서 중요: config → AI APIKeyModal → ui 모듈들 → systems → ai → scenes → main
-     ★ src/ai/APIKeyModal.js (v0.2: 분대 수 슬라이더 포함) 사용
-       src/ui/APIKeyModal.js (v0.1: 구버전) 은 로드하지 않음
--->
+<!-- ═══════════════════════════════════════════════════════════
+     스크립트 로드 순서 (중요)
+     ★ FIX: src/ui/APIKeyModal.js 제거 — src/ai/APIKeyModal.js만 사용
+             src/ui/APIKeyModal.js가 로드되면 클래스를 덮어씌워
+             SQUAD_COUNT/GRID_COLS 주입 코드가 사라지는 버그 발생
+     ═══════════════════════════════════════════════════════════ -->
 <script src="src/config.js"></script>
 <script src="src/ai/APIKeyModal.js"></script>
 <script src="src/ui/ChatUI.js"></script>
@@ -537,15 +459,15 @@
 <script>
   /* ── 부팅 시퀀스 ── */
   const BOOT_LINES = [
-    '> SIGNAL-FOG v0.2 초기화 중...',
+    '> SIGNAL-FOG v0.4 초기화 중...',
     '> Three.js 0.128.0 로드 완료',
     '> Howler.js 사운드 엔진 활성화',
-    '> 250×250 전술 그리드 (62,500 타일) 생성 중...',
-    '> 지형 생성: 개활지 / 수풀 / 계곡 / 고지',
+    '> 전술 그리드 생성 중...',
+    '> 지형 생성: 개활지 / 수풀 / 계곡 / 고지 / 하천 / 교량',
     '> Gemini AI 클라이언트 준비 중...',
     '> 폴백 AI (전술 이동) 모듈 대기',
     '> 통신 오류 시스템 (오청 3종) 초기화',
-    '> 포그 오브 워 — 시야 반경 8타일',
+    '> 포그 오브 워 — 시야 반경 3타일',
     '> 분대 편성 시스템 로드 완료',
     '> 전술 시뮬레이터 시작',
   ];
@@ -577,9 +499,13 @@
     setTimeout(bootStep, 220 + Math.random() * 180);
   }
 
-  /* ── 로드 완료 시 APIKeyModal(v0.2) 표시 ── */
+  /* ── 로드 완료 시 APIKeyModal 표시 ── */
   window.addEventListener('load', () => {
-    APIKeyModal.show(() => setTimeout(bootStep, 300));
+    // ★ FIX: requestAnimationFrame으로 DOM 레이아웃 완료 후 표시
+    // → #game-canvas-container의 실제 크기가 확정된 뒤 renderer가 초기화되도록 보장
+    requestAnimationFrame(() => {
+      APIKeyModal.show(() => setTimeout(bootStep, 300));
+    });
   });
 
   /* ── 시계 ── */
@@ -592,7 +518,7 @@
   }
   updateClock(); setInterval(updateClock, 1000);
 
-  /* ── 좌측 패널 분대 선택 (GameScene 위임) ── */
+  /* ── 좌측 패널 분대 선택 ── */
   function selectSquad(card, squadId) {
     if (window.gameScene && typeof window.gameScene.selectSquadById === 'function') {
       window.gameScene.selectSquadById(squadId);

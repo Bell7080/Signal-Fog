@@ -1,6 +1,9 @@
 /* ============================================================
-   APIKeyModal.js (src/ai/) — 시작 전 API 키 선택 + 병력 편성 팝업
-   v0.3 FIX: 맵 정보 표시 250×250 → 20×20으로 수정
+   APIKeyModal.js (src/ai/) — 시작 전 API 키 선택 + 병력 편성 + 맵 크기 팝업
+   v0.4 FIX:
+     - src/ui/APIKeyModal.js 충돌 제거 (이 파일만 사용)
+     - 맵 크기 슬라이더 추가 (10×10 ~ 30×30)
+     - CONFIG.SQUAD_COUNT / ENEMY_COUNT / GRID_COLS / GRID_ROWS 올바르게 주입
    ============================================================ */
 
 class APIKeyModal {
@@ -8,6 +11,10 @@ class APIKeyModal {
   static show(onStart) {
     const old = document.getElementById('api-modal-root');
     if (old) old.remove();
+
+    const mapDef = CONFIG.MAP_DEFAULT || 20;
+    const mapMin = CONFIG.MAP_MIN || 10;
+    const mapMax = CONFIG.MAP_MAX || 30;
 
     const root = document.createElement('div');
     root.id = 'api-modal-root';
@@ -26,7 +33,7 @@ class APIKeyModal {
           z-index: 1;
         }
         #api-modal-box {
-          position: relative; z-index: 2; width: 520px;
+          position: relative; z-index: 2; width: 540px;
           border: 1px solid #1e3a28; background: #080c0a;
           box-shadow: 0 0 60px rgba(57,255,142,.08), inset 0 0 30px rgba(57,255,142,.02);
           animation: modalIn .4s cubic-bezier(.16,1,.3,1) forwards;
@@ -65,6 +72,28 @@ class APIKeyModal {
         #api-key-status.err { color:#ff4444; }
         #api-key-status.chk { color:#ffb84d; animation:pulse 1s infinite; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+        /* ── 맵 크기 슬라이더 ── */
+        .map-size-wrap { border:1px solid #1e3a28; padding:14px 16px 12px; background:rgba(13,20,16,.5); margin-bottom:4px; }
+        .map-size-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+        .map-size-title { font-size:.65rem; letter-spacing:.1em; color:#c8e6c9; }
+        .map-size-val { font-size:1.4rem; color:#39ff8e; text-shadow:0 0 10px rgba(57,255,142,.4); letter-spacing:.06em; }
+        .map-size-slider { width:100%; -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; outline:none; cursor:pointer; background:linear-gradient(to right,#39ff8e 0%,#39ff8e var(--map-pct,50%),#1e3a28 var(--map-pct,50%),#1e3a28 100%); }
+        .map-size-slider::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; border:2px solid #39ff8e; background:#080c0a; box-shadow:0 0 8px #39ff8e; cursor:pointer; }
+        .map-size-info { display:flex; justify-content:space-between; margin-top:7px; font-size:.54rem; color:#4a7c59; letter-spacing:.06em; font-family:'Noto Sans KR',sans-serif; }
+        .map-size-info b { color:#39ff8e; }
+
+        /* ── 지형 프리뷰 태그 ── */
+        .terrain-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+        .terrain-tag { font-size:.52rem; padding:2px 8px; border:1px solid; letter-spacing:.06em; }
+        .terrain-tag.open   { color:#39ff8e; border-color:#39ff8e; }
+        .terrain-tag.forest { color:#22aa55; border-color:#22aa55; }
+        .terrain-tag.valley { color:#2277cc; border-color:#2277cc; }
+        .terrain-tag.hill   { color:#ffb84d; border-color:#ffb84d; }
+        .terrain-tag.river  { color:#44aaff; border-color:#44aaff; }
+        .terrain-tag.bridge { color:#ff8844; border-color:#ff8844; }
+
+        /* ── 병력 편성 ── */
         .force-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:4px; }
         .force-card { border:1px solid #1e3a28; padding:14px 14px 12px; background:rgba(13,20,16,.5); }
         .force-card.ally-card  { border-color:#1e6644; }
@@ -84,10 +113,6 @@ class APIKeyModal {
         .ally-slider  { --slider-fill:#39ff8e; }
         .enemy-slider { --slider-fill:#ff4444; }
         .force-preview { margin-top:6px; font-size:.52rem; color:#4a7c59; letter-spacing:.06em; font-family:'Noto Sans KR',sans-serif; text-align:center; }
-        .map-info-row { display:flex; gap:8px; margin-bottom:4px; }
-        .map-chip { flex:1; padding:8px 10px; border:1px solid #1e3a28; background:rgba(13,20,16,.5); text-align:center; }
-        .map-chip-label { font-size:.52rem; color:#4a7c59; letter-spacing:.1em; text-transform:uppercase; margin-bottom:3px; }
-        .map-chip-val   { font-size:.82rem; color:#39ff8e; letter-spacing:.08em; }
         .modal-sep { height:1px; background:#1e3a28; margin:14px 0; }
         #api-modal-start { width:100%; padding:13px; background:transparent; border:1px solid #39ff8e; color:#39ff8e; font-family:'Share Tech Mono',monospace; font-size:.78rem; letter-spacing:.2em; text-transform:uppercase; cursor:pointer; transition:all .2s; position:relative; overflow:hidden; }
         #api-modal-start:hover { background:rgba(57,255,142,.1); box-shadow:0 0 24px rgba(57,255,142,.2); }
@@ -98,10 +123,12 @@ class APIKeyModal {
       <div id="api-modal-box">
         <div id="api-modal-header">
           <div id="api-modal-logo">SIGNAL-FOG</div>
-          <div id="api-modal-sub">KCTC 과학화전투 시뮬레이터 // v0.3 — 팀 LNG &nbsp;|&nbsp; 20×20 전술맵</div>
+          <div id="api-modal-sub">KCTC 과학화전투 시뮬레이터 // v0.4 — 팀 LNG</div>
         </div>
 
         <div id="api-modal-body">
+
+          <!-- 전투 모드 -->
           <div class="modal-section-label">▸ 전투 모드 선택</div>
           <div class="modal-mode-btns">
             <button class="modal-mode-btn" id="btn-ai" onclick="APIKeyModal._selectMode('ai')">
@@ -116,6 +143,7 @@ class APIKeyModal {
             </button>
           </div>
 
+          <!-- API 키 입력 -->
           <div id="api-key-section">
             <div class="modal-section-label" style="margin-top:14px;">▸ Gemini API 키 입력</div>
             <div class="modal-input-wrap">
@@ -131,22 +159,32 @@ class APIKeyModal {
             <div id="api-key-status"></div>
           </div>
 
-          <div class="modal-section-label">▸ 작전 구역 정보</div>
-          <div class="map-info-row">
-            <div class="map-chip">
-              <div class="map-chip-label">맵 크기</div>
-              <div class="map-chip-val">20 × 20</div>
+          <!-- 맵 크기 -->
+          <div class="modal-section-label">▸ 작전 구역 맵 크기</div>
+          <div class="map-size-wrap">
+            <div class="map-size-row">
+              <span class="map-size-title">맵 크기</span>
+              <span class="map-size-val" id="map-size-display">${mapDef} × ${mapDef}</span>
             </div>
-            <div class="map-chip">
-              <div class="map-chip-label">총 타일</div>
-              <div class="map-chip-val">400</div>
+            <input type="range" class="map-size-slider" id="map-size-slider"
+              min="${mapMin}" max="${mapMax}" value="${mapDef}"
+              oninput="APIKeyModal._onMapSlider(this.value)" />
+            <div class="map-size-info">
+              <span>${mapMin}×${mapMin} (소규모)</span>
+              <span>현재: <b id="map-tile-count">${mapDef*mapDef}</b> 타일</span>
+              <span>${mapMax}×${mapMax} (대규모)</span>
             </div>
-            <div class="map-chip">
-              <div class="map-chip-label">지형 종류</div>
-              <div class="map-chip-val">4종</div>
+            <div class="terrain-tags">
+              <span class="terrain-tag open">개활지</span>
+              <span class="terrain-tag forest">수풀</span>
+              <span class="terrain-tag valley">계곡</span>
+              <span class="terrain-tag hill">고지</span>
+              <span class="terrain-tag river">하천 (연결)</span>
+              <span class="terrain-tag bridge">교량</span>
             </div>
           </div>
 
+          <!-- 병력 편성 -->
           <div class="modal-section-label">▸ 병력 편성 (1 ~ 10개 분대)</div>
           <div class="force-grid">
             <div class="force-card ally-card">
@@ -180,7 +218,7 @@ class APIKeyModal {
 
         <div id="api-modal-footer">
           ※ 입력된 API 키는 브라우저 메모리에만 보관되며 외부로 전송되지 않습니다.<br>
-          ※ 20×20 맵 | OrbitControls로 드래그·줌 조작 가능합니다.
+          ※ 하천은 맵을 가로지르도록 연결 생성됩니다. 교량으로 도하 가능합니다.
         </div>
       </div>
     `;
@@ -190,9 +228,29 @@ class APIKeyModal {
     APIKeyModal._mode       = null;
     APIKeyModal._allyCount  = 5;
     APIKeyModal._enemyCount = 5;
+    APIKeyModal._mapSize    = mapDef;
     APIKeyModal._updateSliderGradient('ally',  5);
     APIKeyModal._updateSliderGradient('enemy', 5);
+    APIKeyModal._updateMapSliderGradient(mapDef, mapMin, mapMax);
     APIKeyModal._updatePreview();
+  }
+
+  static _updateMapSliderGradient(val, min, max) {
+    const slider = document.getElementById('map-size-slider');
+    if (!slider) return;
+    const pct = ((val - min) / (max - min) * 100).toFixed(1);
+    slider.style.setProperty('--map-pct', pct + '%');
+  }
+
+  static _onMapSlider(val) {
+    const n = parseInt(val);
+    APIKeyModal._mapSize = n;
+    const dispEl = document.getElementById('map-size-display');
+    const tileEl = document.getElementById('map-tile-count');
+    if (dispEl) dispEl.textContent = `${n} × ${n}`;
+    if (tileEl) tileEl.textContent = `${n * n}`;
+    const min = CONFIG.MAP_MIN || 10, max = CONFIG.MAP_MAX || 30;
+    APIKeyModal._updateMapSliderGradient(n, min, max);
   }
 
   static _updateSliderGradient(side, val) {
@@ -263,18 +321,36 @@ class APIKeyModal {
   static _start() {
     const mode = APIKeyModal._mode;
     if (!mode) return;
+
+    // ── AI 키 주입 ──
     if (mode === 'ai') {
       const key = document.getElementById('api-key-input').value.trim();
-      if (key.length >= 20) { CONFIG.GEMINI_API_KEY = key; console.log('%c✅ Gemini API Key 주입 완료','color:#39ff8e;font-weight:bold'); }
+      if (key.length >= 20) {
+        CONFIG.GEMINI_API_KEY = key;
+        console.log('%c✅ Gemini API Key 주입 완료','color:#39ff8e;font-weight:bold');
+      }
     } else {
       CONFIG.GEMINI_API_KEY = '';
     }
+
+    // ── 맵 크기 주입 ── (핵심: GRID_COLS / GRID_ROWS 덮어씀)
+    const mapN = APIKeyModal._mapSize || CONFIG.MAP_DEFAULT || 20;
+    CONFIG.GRID_COLS = mapN;
+    CONFIG.GRID_ROWS = mapN;
+
+    // ── 분대 수 주입 ──
     CONFIG.SQUAD_COUNT  = APIKeyModal._allyCount;
     CONFIG.ENEMY_COUNT  = APIKeyModal._enemyCount;
-    console.log(`%c⚔ 편성 완료 — 아군 ${CONFIG.SQUAD_COUNT}분대 / 적군 ${CONFIG.ENEMY_COUNT}분대 | 맵 20×20`, 'color:#39ff8e;font-weight:bold');
+
+    console.log(
+      `%c⚔ 편성 완료 — 아군 ${CONFIG.SQUAD_COUNT}분대 / 적군 ${CONFIG.ENEMY_COUNT}분대 | 맵 ${mapN}×${mapN}`,
+      'color:#39ff8e;font-weight:bold'
+    );
+
     const root = document.getElementById('api-modal-root');
     if (root) {
-      root.style.transition = 'opacity 0.35s'; root.style.opacity = '0';
+      root.style.transition = 'opacity 0.35s';
+      root.style.opacity    = '0';
       setTimeout(() => { root.remove(); APIKeyModal._onStart?.(); }, 370);
     } else {
       APIKeyModal._onStart?.();

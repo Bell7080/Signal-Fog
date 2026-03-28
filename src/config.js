@@ -1,23 +1,28 @@
 /* ============================================================
    config.js — Signal-Fog 전역 설정값
-   v0.3 FIX: 250×250 → 20×20 (브라우저 렌더링 가능 범위)
-             Three.js로 250×250 = 125,000+ 오브젝트 동기 생성 시
-             메인스레드 블록으로 게임 화면 미표시 버그 수정
+   v0.4 FIX: 맵 크기 동적 조절 지원 (10~30 범위)
    ============================================================ */
 
 var CONFIG = {
 
-  /* ── 맵 (20×20) ── */
+  /* ── 맵 (APIKeyModal에서 동적으로 덮어씀) ── */
   GRID_COLS:    20,
   GRID_ROWS:    20,
   TILE_SIZE:    64,
 
-  /* ── 지형 종류 (예선 MVP 4종) ── */
+  /* ── 맵 크기 범위 ── */
+  MAP_MIN: 10,
+  MAP_MAX: 30,
+  MAP_DEFAULT: 20,
+
+  /* ── 지형 종류 (예선 MVP 6종) ── */
   TERRAIN: {
     OPEN:    { id: 'open',   label: '개활지', moveCost: 1, commsBonus:  0, cover: 0   },
     FOREST:  { id: 'forest', label: '수풀',   moveCost: 2, commsBonus:  0, cover: 0.1 },
     VALLEY:  { id: 'valley', label: '계곡',   moveCost: 2, commsPenalty: 40, cover: 0  },
     HILL:    { id: 'hill',   label: '고지',   moveCost: 2, commsRange: 1,  cover: 0   },
+    RIVER:   { id: 'river',  label: '하천',   moveCost: 3, commsPenalty: 10, cover: 0  },
+    BRIDGE:  { id: 'bridge', label: '교량',   moveCost: 1, commsBonus:  0, cover: 0   },
   },
 
   /* ── 분대 (게임 시작 시 동적으로 덮어씀) ── */
