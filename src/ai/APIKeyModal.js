@@ -73,19 +73,34 @@ class APIKeyModal {
         #api-key-status.chk { color:#ffb84d; animation:pulse 1s infinite; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-        /* ── 맵 크기 슬라이더 ── */
-        .map-size-wrap { border:1px solid #1e3a28; padding:14px 16px 12px; background:rgba(13,20,16,.5); margin-bottom:4px; }
-        .map-size-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
-        .map-size-title { font-size:.65rem; letter-spacing:.1em; color:#c8e6c9; }
-        .map-size-val { font-size:1.4rem; color:#39ff8e; text-shadow:0 0 10px rgba(57,255,142,.4); letter-spacing:.06em; }
-        .map-size-slider { width:100%; -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; outline:none; cursor:pointer; background:linear-gradient(to right,#39ff8e 0%,#39ff8e var(--map-pct,50%),#1e3a28 var(--map-pct,50%),#1e3a28 100%); }
-        .map-size-slider::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; border:2px solid #39ff8e; background:#080c0a; box-shadow:0 0 8px #39ff8e; cursor:pointer; }
-        .map-size-info { display:flex; justify-content:space-between; margin-top:7px; font-size:.54rem; color:#4a7c59; letter-spacing:.06em; font-family:'Noto Sans KR',sans-serif; }
-        .map-size-info b { color:#39ff8e; }
+        /* ── 병력 편성 + 맵 크기 — 3열 통합 그리드 ── */
+        .force-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:4px; }
+        .force-card { border:1px solid #1e3a28; padding:12px 12px 10px; background:rgba(13,20,16,.5); }
+        .force-card.ally-card  { border-color:#1e6644; }
+        .force-card.enemy-card { border-color:#662222; }
+        .force-card.map-card   { border-color:#1e3a55; }
+        .force-card-title { font-size:.56rem; letter-spacing:.12em; margin-bottom:9px; text-transform:uppercase; }
+        .ally-card   .force-card-title { color:#39ff8e; }
+        .enemy-card  .force-card-title { color:#ff4444; }
+        .map-card    .force-card-title { color:#6699ff; }
+        .force-counter { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+        .force-btn { width:26px; height:26px; border:1px solid #1e3a28; background:transparent; font-family:'Share Tech Mono',monospace; font-size:1rem; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; flex-shrink:0; color:#c8e6c9; }
+        .force-btn:hover { background:rgba(255,255,255,.07); border-color:#c8e6c9; }
+        .force-val { font-size:1.6rem; font-weight:bold; min-width:32px; text-align:center; line-height:1; }
+        .ally-card  .force-val { color:#39ff8e; text-shadow:0 0 10px rgba(57,255,142,.4); }
+        .enemy-card .force-val { color:#ff4444; text-shadow:0 0 10px rgba(255,68,68,.4); }
+        .map-card   .force-val { color:#6699ff; text-shadow:0 0 10px rgba(102,153,255,.4); font-size:1.1rem; line-height:1.4; }
+        .force-label { font-size:.52rem; color:#4a7c59; letter-spacing:.05em; text-align:center; margin-top:4px; font-family:'Noto Sans KR',sans-serif; }
+        .force-slider { width:100%; margin-top:8px; -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; outline:none; cursor:pointer; background:linear-gradient(to right,var(--slider-fill,#39ff8e) 0%,var(--slider-fill,#39ff8e) var(--slider-pct,50%),#1e3a28 var(--slider-pct,50%),#1e3a28 100%); }
+        .force-slider::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px; border-radius:50%; border:2px solid var(--slider-fill,#39ff8e); background:#080c0a; box-shadow:0 0 5px var(--slider-fill,#39ff8e); cursor:pointer; }
+        .ally-slider  { --slider-fill:#39ff8e; }
+        .enemy-slider { --slider-fill:#ff4444; }
+        .map-slider   { --slider-fill:#6699ff; --slider-pct:50%; }
+        .force-preview { margin-top:5px; font-size:.50rem; color:#4a7c59; letter-spacing:.04em; font-family:'Noto Sans KR',sans-serif; text-align:center; }
 
-        /* ── 지형 프리뷰 태그 ── */
-        .terrain-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
-        .terrain-tag { font-size:.52rem; padding:2px 8px; border:1px solid; letter-spacing:.06em; }
+        /* ── 지형 태그 (맵 카드 하단) ── */
+        .terrain-tags { display:flex; gap:3px; flex-wrap:wrap; margin-top:7px; }
+        .terrain-tag { font-size:.46rem; padding:1px 5px; border:1px solid; letter-spacing:.04em; }
         .terrain-tag.open   { color:#39ff8e; border-color:#39ff8e; }
         .terrain-tag.forest { color:#22aa55; border-color:#22aa55; }
         .terrain-tag.valley { color:#2277cc; border-color:#2277cc; }
@@ -93,26 +108,6 @@ class APIKeyModal {
         .terrain-tag.river  { color:#44aaff; border-color:#44aaff; }
         .terrain-tag.bridge { color:#ff8844; border-color:#ff8844; }
 
-        /* ── 병력 편성 ── */
-        .force-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:4px; }
-        .force-card { border:1px solid #1e3a28; padding:14px 14px 12px; background:rgba(13,20,16,.5); }
-        .force-card.ally-card  { border-color:#1e6644; }
-        .force-card.enemy-card { border-color:#662222; }
-        .force-card-title { font-size:.58rem; letter-spacing:.14em; margin-bottom:10px; text-transform:uppercase; }
-        .ally-card  .force-card-title { color:#39ff8e; }
-        .enemy-card .force-card-title { color:#ff4444; }
-        .force-counter { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-        .force-btn { width:28px; height:28px; border:1px solid #1e3a28; background:transparent; font-family:'Share Tech Mono',monospace; font-size:1rem; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; flex-shrink:0; color:#c8e6c9; }
-        .force-btn:hover { background:rgba(255,255,255,.07); border-color:#c8e6c9; }
-        .force-val { font-size:1.8rem; font-weight:bold; min-width:36px; text-align:center; line-height:1; }
-        .ally-card  .force-val { color:#39ff8e; text-shadow:0 0 12px rgba(57,255,142,.4); }
-        .enemy-card .force-val { color:#ff4444; text-shadow:0 0 12px rgba(255,68,68,.4); }
-        .force-label { font-size:.55rem; color:#4a7c59; letter-spacing:.06em; text-align:center; margin-top:5px; font-family:'Noto Sans KR',sans-serif; }
-        .force-slider { width:100%; margin-top:8px; -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; outline:none; cursor:pointer; background:linear-gradient(to right,var(--slider-fill,#39ff8e) 0%,var(--slider-fill,#39ff8e) var(--slider-pct,50%),#1e3a28 var(--slider-pct,50%),#1e3a28 100%); }
-        .force-slider::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; border:2px solid var(--slider-fill,#39ff8e); background:#080c0a; box-shadow:0 0 6px var(--slider-fill,#39ff8e); cursor:pointer; }
-        .ally-slider  { --slider-fill:#39ff8e; }
-        .enemy-slider { --slider-fill:#ff4444; }
-        .force-preview { margin-top:6px; font-size:.52rem; color:#4a7c59; letter-spacing:.06em; font-family:'Noto Sans KR',sans-serif; text-align:center; }
         .modal-sep { height:1px; background:#1e3a28; margin:14px 0; }
         #api-modal-start { width:100%; padding:13px; background:transparent; border:1px solid #39ff8e; color:#39ff8e; font-family:'Share Tech Mono',monospace; font-size:.78rem; letter-spacing:.2em; text-transform:uppercase; cursor:pointer; transition:all .2s; position:relative; overflow:hidden; }
         #api-modal-start:hover { background:rgba(57,255,142,.1); box-shadow:0 0 24px rgba(57,255,142,.2); }
@@ -159,34 +154,11 @@ class APIKeyModal {
             <div id="api-key-status"></div>
           </div>
 
-          <!-- 맵 크기 -->
-          <div class="modal-section-label">▸ 작전 구역 맵 크기</div>
-          <div class="map-size-wrap">
-            <div class="map-size-row">
-              <span class="map-size-title">맵 크기</span>
-              <span class="map-size-val" id="map-size-display">${mapDef} × ${mapDef}</span>
-            </div>
-            <input type="range" class="map-size-slider" id="map-size-slider"
-              min="${mapMin}" max="${mapMax}" value="${mapDef}"
-              oninput="APIKeyModal._onMapSlider(this.value)" />
-            <div class="map-size-info">
-              <span>${mapMin}×${mapMin} (소규모)</span>
-              <span>현재: <b id="map-tile-count">${mapDef*mapDef}</b> 타일</span>
-              <span>${mapMax}×${mapMax} (대규모)</span>
-            </div>
-            <div class="terrain-tags">
-              <span class="terrain-tag open">개활지</span>
-              <span class="terrain-tag forest">수풀</span>
-              <span class="terrain-tag valley">계곡</span>
-              <span class="terrain-tag hill">고지</span>
-              <span class="terrain-tag river">하천 (연결)</span>
-              <span class="terrain-tag bridge">교량</span>
-            </div>
-          </div>
-
-          <!-- 병력 편성 -->
-          <div class="modal-section-label">▸ 병력 편성 (1 ~ 10개 분대)</div>
+          <!-- 병력 편성 + 맵 크기 — 3열 통합 -->
+          <div class="modal-section-label">▸ 병력 편성 &amp; 작전 구역</div>
           <div class="force-grid">
+
+            <!-- 아군 -->
             <div class="force-card ally-card">
               <div class="force-card-title">🟢 아군 분대</div>
               <div class="force-counter">
@@ -197,6 +169,8 @@ class APIKeyModal {
               <input type="range" class="force-slider ally-slider" id="ally-slider" min="1" max="10" value="5" oninput="APIKeyModal._onSlider('ally',this.value)" />
               <div class="force-preview" id="ally-preview">병사 20명 / AP 5×4</div>
             </div>
+
+            <!-- 적군 -->
             <div class="force-card enemy-card">
               <div class="force-card-title">🔴 적군 분대</div>
               <div class="force-counter">
@@ -207,6 +181,31 @@ class APIKeyModal {
               <input type="range" class="force-slider enemy-slider" id="enemy-slider" min="1" max="10" value="5" oninput="APIKeyModal._onSlider('enemy',this.value)" />
               <div class="force-preview" id="enemy-preview">병사 20명</div>
             </div>
+
+            <!-- 맵 크기 -->
+            <div class="force-card map-card">
+              <div class="force-card-title">🗺 맵 크기</div>
+              <div class="force-counter">
+                <button class="force-btn" onclick="APIKeyModal._changeMap(-1)" style="border-color:#1e3a55;">−</button>
+                <div>
+                  <div class="force-val" id="map-size-display">${mapDef}×${mapDef}</div>
+                  <div class="force-label" id="map-tile-count">${mapDef*mapDef} 타일</div>
+                </div>
+                <button class="force-btn" onclick="APIKeyModal._changeMap(+1)" style="border-color:#1e3a55;">+</button>
+              </div>
+              <input type="range" class="force-slider map-slider" id="map-size-slider"
+                min="${mapMin}" max="${mapMax}" value="${mapDef}"
+                oninput="APIKeyModal._onMapSlider(this.value)" />
+              <div class="terrain-tags">
+                <span class="terrain-tag open">개활지</span>
+                <span class="terrain-tag forest">수풀</span>
+                <span class="terrain-tag valley">계곡</span>
+                <span class="terrain-tag hill">고지</span>
+                <span class="terrain-tag river">하천</span>
+                <span class="terrain-tag bridge">교량</span>
+              </div>
+            </div>
+
           </div>
 
           <div class="modal-sep"></div>
@@ -239,7 +238,7 @@ class APIKeyModal {
     const slider = document.getElementById('map-size-slider');
     if (!slider) return;
     const pct = ((val - min) / (max - min) * 100).toFixed(1);
-    slider.style.setProperty('--map-pct', pct + '%');
+    slider.style.setProperty('--slider-pct', pct + '%');
   }
 
   static _onMapSlider(val) {
@@ -247,10 +246,24 @@ class APIKeyModal {
     APIKeyModal._mapSize = n;
     const dispEl = document.getElementById('map-size-display');
     const tileEl = document.getElementById('map-tile-count');
-    if (dispEl) dispEl.textContent = `${n} × ${n}`;
-    if (tileEl) tileEl.textContent = `${n * n}`;
+    if (dispEl) dispEl.textContent = `${n}×${n}`;
+    if (tileEl) tileEl.textContent = `${n * n} 타일`;
     const min = CONFIG.MAP_MIN || 10, max = CONFIG.MAP_MAX || 30;
     APIKeyModal._updateMapSliderGradient(n, min, max);
+  }
+
+  // ± 버튼으로 맵 크기 1씩 조절
+  static _changeMap(delta) {
+    const min = CONFIG.MAP_MIN || 10, max = CONFIG.MAP_MAX || 30;
+    const next = Math.min(max, Math.max(min, APIKeyModal._mapSize + delta));
+    APIKeyModal._mapSize = next;
+    const slider = document.getElementById('map-size-slider');
+    if (slider) slider.value = next;
+    const dispEl = document.getElementById('map-size-display');
+    const tileEl = document.getElementById('map-tile-count');
+    if (dispEl) dispEl.textContent = `${next}×${next}`;
+    if (tileEl) tileEl.textContent = `${next * next} 타일`;
+    APIKeyModal._updateMapSliderGradient(next, min, max);
   }
 
   static _updateSliderGradient(side, val) {

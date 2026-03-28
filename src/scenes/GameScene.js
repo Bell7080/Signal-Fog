@@ -462,30 +462,56 @@ class GameScene {
 
   _updateOverlapVisuals() {
     if (!this.scene3d || !this.gridMap) return;
+
+    // 기존 배지 제거
     for (const b of Object.values(this._overlapBadges)) {
       this.scene3d.remove(b); b.material?.map?.dispose(); b.material?.dispose();
     }
     this._overlapBadges = {};
-    const groups = {};
-    for (const s of this.squads.filter(q => q.alive && q.mesh)) {
-      const key = `${s.pos.col},${s.pos.row}`;
-      (groups[key] = groups[key] || []).push(s);
-    }
+
     const TW = this.gridMap.TILE_W;
-    for (const [key, list] of Object.entries(groups)) {
+
+    // ── 아군 겹침 처리: 오프셋 분산 + ×N 배지 표시 ──
+    const allyGroups = {};
+    for (const s of this.squads.filter(q => q.alive && q.mesh && q.side === 'ally')) {
+      const key = `${s.pos.col},${s.pos.row}`;
+      (allyGroups[key] = allyGroups[key] || []).push(s);
+    }
+    for (const [key, list] of Object.entries(allyGroups)) {
       const [col, row] = key.split(',').map(Number);
       const base = this.gridMap.toWorld(col, row);
       if (list.length === 1) {
         list[0].mesh.position.set(base.x, base.y, base.z);
       } else {
+        // 오프셋 분산
         const off = this._calcOffsets(list.length);
         list.forEach((s, i) => s.mesh.position.set(base.x + off[i].dx, base.y, base.z + off[i].dz));
+        // 아군만 ×N 배지 표시
         const badge = _makeTextSprite(`×${list.length}`, '#ffb84d');
         badge.position.set(base.x, base.y + TW * 1.6, base.z);
         badge.scale.set(TW, TW * 0.6, 1);
         badge.renderOrder = 10;
         this.scene3d.add(badge);
         this._overlapBadges[key] = badge;
+      }
+    }
+
+    // ── 적군 겹침 처리: 오프셋 분산만, 배지는 절대 표시 안 함 ──
+    // (배지가 뜨면 적군 위치가 노출되어 게임 밸런스 파괴)
+    const enemyGroups = {};
+    for (const s of this.squads.filter(q => q.alive && q.mesh && q.side === 'enemy')) {
+      const key = `${s.pos.col},${s.pos.row}`;
+      (enemyGroups[key] = enemyGroups[key] || []).push(s);
+    }
+    for (const [key, list] of Object.entries(enemyGroups)) {
+      const [col, row] = key.split(',').map(Number);
+      const base = this.gridMap.toWorld(col, row);
+      if (list.length === 1) {
+        list[0].mesh.position.set(base.x, base.y, base.z);
+      } else {
+        // 오프셋만 분산 — 배지 없음
+        const off = this._calcOffsets(list.length);
+        list.forEach((s, i) => s.mesh.position.set(base.x + off[i].dx, base.y, base.z + off[i].dz));
       }
     }
   }
