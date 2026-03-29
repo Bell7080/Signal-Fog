@@ -1,6 +1,6 @@
 /* ============================================================
    config.js — Signal-Fog 전역 설정값
-   v0.4 FIX: 맵 크기 동적 조절 지원 (10~30 범위)
+   v0.5: moveAp 제거 → 무기별 이동칸 분리, 생존 행동소모만 유지
    ============================================================ */
 
 var CONFIG = {
@@ -28,7 +28,7 @@ var CONFIG = {
   /* ── 분대 (게임 시작 시 동적으로 덮어씀) ── */
   SQUAD_COUNT:      5,
   ENEMY_COUNT:      5,
-  SQUAD_AP_MAX:     4,
+  SQUAD_AP_MAX:     3,    // 공격/특수행동 전용 AP
   SQUAD_TROOP_MAX:  4,
 
   /* ── 분대 수 범위 ── */
@@ -42,22 +42,26 @@ var CONFIG = {
   /* ── 교전 ── */
   RIFLE_RANGE:      4,
   RIFLE_HIT_RATE:   0.6,
-  FOG_SIGHT_RANGE:  3,
 
-  /* ── 분대 행동 AP (이동 분리 후 공격/특수행동 전용) ── */
-  SQUAD_AP_MAX: 3,
+  /* ── 포그 오브 워 (원형 시야) ── */
+  FOG_SIGHT_RANGE:  4,   // 유클리드 반경 타일 수 (원형)
 
   /* ── 턴 ── */
   TURN_LIMIT:      20,
   TURN_INPUT_SEC:  60,
 
   /* ── 목표 점령 (3×3 게이지 시스템) ── */
-  OBJECTIVE_SIZE:            3,   // 점령지 크기 (3×3 타일)
-  CAPTURE_WIN_TURNS_FACTOR:  4,   // 승리 게이지 = 아군분대수 × 이 값
-  OBJECTIVE_DISCOVERY_RANGE: 2,   // 발견 반경 (타일)
+  OBJECTIVE_SIZE:            3,
+  CAPTURE_WIN_TURNS_FACTOR:  4,
+  OBJECTIVE_DISCOVERY_RANGE: 3,   // 발견 반경 (타일) — 조금 넓게
 
-  /* ── 이동/공격 분리 ── */
-  SQUAD_MOVE_AP: 2,    // 이동 포인트 (매 턴, 별도 관리)
+  /* ── 무기별 기본 이동칸 ── */
+  RIFLE_MOVE:  3,   // 소총: 3칸
+  MG_MOVE:     2,   // 기관총: 2칸
+  MORTAR_MOVE: 1,   // 박격포: 1칸 (거치 시 0)
+
+  /* ── 생존 저하 이동 페널티 ── */
+  SURVIVAL_MOVE_PENALTY_THRESHOLD: 30,  // 이 % 미만인 스탯당 이동칸 -1
 
   /* ── AI ── */
   GEMINI_API_KEY: '',
@@ -67,54 +71,58 @@ var CONFIG = {
   /* ── 보급 시스템 ── */
   SUPPLY_WATER_MAX:        100,
   SUPPLY_RATION_MAX:       100,
-  SUPPLY_WATER_DRAIN:      0,     // 소모는 SurvivalStats에서 처리 (0으로 비활성화)
-  SUPPLY_RATION_DRAIN:     0,     // 소모는 SurvivalStats에서 처리
-  SUPPLY_RESUPPLY_RANGE:   3,     // 배급소 보급 반경 (타일)
-  SUPPLY_RESUPPLY_WATER:   25,    // 배급소 근처 수분 회복량/턴
-  SUPPLY_RESUPPLY_RATION:  18,    // 배급소 근처 전투식량 회복량/턴
-  SUPPLY_DEPOT_WATER:      400,   // 배급소 수분 보유량
-  SUPPLY_DEPOT_RATION:     300,   // 배급소 전투식량 보유량
-  SUPPLY_DEPOT_HP:         3,     // 배급소 내구도
-  SUPPLY_AP_PENALTY_WATER: 1,     // 수분 30% 미만 시 AP 패널티
-  SUPPLY_AP_PENALTY_RATION:1,     // 전투식량 20% 미만 시 AP 패널티
+  SUPPLY_WATER_DRAIN:      0,     // SurvivalStats에서 처리
+  SUPPLY_RATION_DRAIN:     0,
+  SUPPLY_RESUPPLY_RANGE:   3,
+  SUPPLY_RESUPPLY_WATER:   25,
+  SUPPLY_RESUPPLY_RATION:  18,
+  SUPPLY_DEPOT_WATER:      400,
+  SUPPLY_DEPOT_RATION:     300,
+  SUPPLY_DEPOT_HP:         3,
+  SUPPLY_AP_PENALTY_WATER: 1,
+  SUPPLY_AP_PENALTY_RATION:1,
+
+  /* ── 보급 차량 ── */
+  SUPPLY_VEHICLE_HP:       3,     // 차량 내구도
+  SUPPLY_VEHICLE_SPEED:    2,     // 턴당 이동 칸 수
+  SUPPLY_VEHICLE_FOOD_AMT: 250,   // 전투식량 보충량
+  SUPPLY_VEHICLE_WATER_AMT:300,   // 급수 보충량
 
   /* ── 생존 스탯 시스템 ── */
   SURVIVAL_MORALE_MAX:             100,
-  // 턴당 수동 소모 (배급소 없을 때)
-  SURVIVAL_WATER_DECAY_TURN:       8,
-  SURVIVAL_RATION_DECAY_TURN:      6,
-  SURVIVAL_MORALE_DECAY_TURN:      4,
+  // 패시브 턴당 소모 없음 — 행동 시에만 소모
+  SURVIVAL_WATER_DECAY_TURN:       0,
+  SURVIVAL_RATION_DECAY_TURN:      0,
+  SURVIVAL_MORALE_DECAY_TURN:      0,
   // 행동당 소모
-  SURVIVAL_MOVE_WATER:             2,    // 이동 1회당
-  SURVIVAL_MOVE_RATION:            1,
-  SURVIVAL_ATTACK_MORALE:          8,    // 공격 1회당
-  SURVIVAL_ATTACK_WATER:           3,
-  SURVIVAL_ATTACK_RATION:          3,
+  SURVIVAL_MOVE_WATER:             3,    // 이동 1회당
+  SURVIVAL_MOVE_RATION:            2,
+  SURVIVAL_ATTACK_MORALE:          10,   // 공격 1회당
+  SURVIVAL_ATTACK_WATER:           4,
+  SURVIVAL_ATTACK_RATION:          4,
   // 소지 인벤토리
-  SURVIVAL_INV_RATION_START:       5,    // 시작 소지 식량 (개)
-  SURVIVAL_INV_WATER_START:        5,    // 시작 소지 물 (개)
-  SURVIVAL_AUTO_USE_THRESHOLD:     25,   // 이 % 미만이면 인벤토리 자동 소모
-  SURVIVAL_ITEM_RESTORE:           35,   // 아이템 1개당 회복량
-  // 배급소 인접 시 모랄 소폭 회복
+  SURVIVAL_INV_RATION_START:       6,
+  SURVIVAL_INV_WATER_START:        6,
+  SURVIVAL_AUTO_USE_THRESHOLD:     30,   // 이 % 미만 → 인벤토리 소모 행동
+  SURVIVAL_ITEM_RESTORE:           40,
+  // 배급소 인근 정신력 회복
   SURVIVAL_DEPOT_MORALE_REGEN:     5,
   // 수면
-  SURVIVAL_MORALE_SLEEP_BELOW:     15,   // 정신력 이 미만 → 수면
-  SURVIVAL_MORALE_WAKE_ABOVE:      35,   // 수면 중 이 이상 → 기상
-  SURVIVAL_SLEEP_MORALE_REGEN:     12,   // 수면 중 정신력 회복/턴
-  // 굶주림
-  SURVIVAL_STARVATION_INTERVAL:    3,    // 아사 병력 감소 간격 (턴)
+  SURVIVAL_MORALE_SLEEP_BELOW:     15,
+  SURVIVAL_MORALE_WAKE_ABOVE:      40,
+  SURVIVAL_SLEEP_MORALE_REGEN:     15,
+  // 굶주림 (water=0 AND ration=0 지속 시)
+  SURVIVAL_STARVATION_INTERVAL:    4,
 
   /* ── 무기 시스템 ── */
   // 기관총 (MG)
   MG_RANGE:       6,
   MG_HIT_RATE:    0.70,
-  MG_MOVE_COST:   1,     // 이동 포인트 소모 증가 (2→1로 감소)
   // 박격포 (Mortar)
   MORTAR_RANGE:   8,
   MORTAR_HIT_RATE:0.55,
-  MORTAR_AOE:     1,     // 폭발 반경 (타일)
-  MORTAR_INACCURACY: 1,  // 착탄 오차 (±타일)
-  MORTAR_SETUP_COST: 1,  // 거치 AP 비용
-  MORTAR_MOVE_COST:  2,  // 이동 포인트 소모 증가 (거치 해제 시 moveAp=0)
-  MORTAR_COOLDOWN:   2,  // 발사 후 재장전 턴 수
+  MORTAR_AOE:     1,
+  MORTAR_INACCURACY: 1,
+  MORTAR_SETUP_COST: 1,
+  MORTAR_COOLDOWN:   2,
 };
