@@ -239,6 +239,19 @@
     .supply-label { font-size:.64rem; color:var(--col-text-dim); letter-spacing:.04em; width:26px; flex-shrink:0; }
     .supply-val { font-size:.64rem; color:var(--col-text-dim); width:32px; text-align:right; }
 
+    /* ─── 정신력 바 ─── */
+    .supply-morale-fill { height:100%; background:#7ec8e3; transition:width .6s ease; box-shadow:0 0 4px #7ec8e3; }
+    .supply-morale-fill.warn { background:var(--col-amber); box-shadow:0 0 4px var(--col-amber); }
+    .supply-morale-fill.crit { background:var(--col-red);   box-shadow:0 0 4px var(--col-red); }
+
+    /* ─── 인벤토리 행 ─── */
+    .inventory-row { display:flex; gap:8px; margin-top:3px; font-size:.62rem; color:var(--col-text-dim); letter-spacing:.04em; }
+    .inv-ration { color:#c8a46e; }
+    .inv-water  { color:#7ec8e3; }
+
+    /* ─── 수면 상태 배지 ─── */
+    .sleeping-tag { font-size:.66rem; color:#aaa; background:rgba(0,0,0,.5); border:1px solid #555; padding:1px 5px; letter-spacing:.06em; }
+
     /* ─── 무기 배지 ─── */
     .weapon-badge {
       font-size:.64rem; letter-spacing:.08em;
@@ -255,6 +268,23 @@
     #supply-chip .depot-line { color:#44aaff; }
     #supply-chip .depot-line.warn { color:var(--col-amber); }
     #supply-chip .depot-line.dead { color:var(--col-red); text-decoration:line-through; }
+
+    /* ─── 점령지 게이지 칩 ─── */
+    #capture-chip {
+      background: rgba(8,12,10,.80); border: 1px solid #b87a00;
+      padding: 4px 12px; font-size:.75rem; letter-spacing:.08em; color:var(--col-text-dim);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .capture-chip-label { color:#ffb84d; letter-spacing:.1em; }
+    .capture-bar-wrap {
+      width: 72px; height: 6px; background: rgba(255,184,77,.18);
+      border: 1px solid #b87a00; border-radius: 2px; overflow: hidden;
+    }
+    .capture-bar-fill {
+      height: 100%; width: 0%; background: #ffb84d;
+      transition: width .4s ease, background .4s;
+    }
+    .capture-chip-pct { color:#ffcc44; min-width: 32px; text-align:right; }
 
     /* ─── 배터리/지형 칩 (캔버스 좌측 상단 보조) ─── */
     #info-chips {
@@ -434,6 +464,13 @@
           <span style="font-size:.64rem;color:#1e5070;letter-spacing:.1em;">▸ 배급소</span>
           <div id="depot-status-lines"></div>
         </div>
+        <div id="capture-chip" style="display:none;">
+          <span class="capture-chip-label">▸ 점령지</span>
+          <div class="capture-bar-wrap">
+            <div class="capture-bar-fill" id="capture-bar-fill"></div>
+          </div>
+          <span class="capture-chip-pct" id="capture-pct-val">0%</span>
+        </div>
       </div>
 
       <!-- 분대 상태 오버레이 (좌하단) -->
@@ -500,6 +537,7 @@
 <script src="src/systems/CombatSystem.js"></script>
 <script src="src/systems/FogOfWar.js"></script>
 <script src="src/systems/SurvivalStats.js"></script>
+<script src="src/systems/ObjectiveSystem.js"></script>
 <script src="src/systems/SupplySystem.js"></script>
 <script src="src/systems/WeaponSystem.js"></script>
 <script src="src/ai/GeminiClient.js"></script>

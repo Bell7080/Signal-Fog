@@ -15,14 +15,11 @@ class EnemyAI {
 
   serializeMap(gridMap, allySquads, enemySquads, allyCommsQuality) {
     const terrain = [];
-    // 250×250은 모든 비개활지 타일을 직렬화하면 프롬프트가 너무 길어짐
-    // → 대신 AI 주변 30타일 이내 지형만 포함
     const enemyPositions = enemySquads.map(s => s.pos);
     for (let r = 0; r < CONFIG.GRID_ROWS; r++) {
       for (let c = 0; c < CONFIG.GRID_COLS; c++) {
         const t = gridMap.tiles[r][c].terrain;
         if (t.id === 'open') continue;
-        // 적군 분대 중 하나라도 30타일 이내에 있으면 포함
         const near = enemyPositions.some(p =>
           Math.abs(p.col - c) + Math.abs(p.row - r) <= 30
         );
@@ -30,31 +27,44 @@ class EnemyAI {
       }
     }
 
-    // 목표 지점: GameScene의 _DEMO_OBJECTIVE 참조
-    const objective = (window.gameScene && window.gameScene._DEMO_OBJECTIVE)
-      ? window.gameScene._DEMO_OBJECTIVE
-      : { col: Math.floor(CONFIG.GRID_COLS/2), row: Math.floor(CONFIG.GRID_ROWS/2) };
+    // 목표 지점: ObjectiveSystem 참조
+    const objSys = window.gameScene?.objective;
+    const objective = objSys
+      ? {
+          center:    objSys.center,
+          tiles:     objSys.tiles,
+          gauge:     objSys.gauge,
+          maxGauge:  objSys.maxGauge,
+          gaugePct:  objSys.getGaugePct(),
+        }
+      : { center: { col: Math.floor(CONFIG.GRID_COLS/2), row: Math.floor(CONFIG.GRID_ROWS/2) }, tiles: [] };
 
     return {
-      gridSize: { cols: CONFIG.GRID_COLS, rows: CONFIG.GRID_ROWS },
+      gridSize:      { cols: CONFIG.GRID_COLS, rows: CONFIG.GRID_ROWS },
       allySpawnRow:  CONFIG.GRID_ROWS - 2,
       enemySpawnRow: 1,
       objective,
       allyCommsQuality,
       terrain,
-      ally:  allySquads.map(s => ({ id: s.id, pos: s.pos, troops: s.troops })),
-      enemy: enemySquads.map(s => ({ id: s.id, pos: s.pos, troops: s.troops })),
+      ally:  allySquads.map(s => ({
+        id: s.id, pos: s.pos, troops: s.troops,
+      })),
+      enemy: enemySquads.map(s => ({
+        id: s.id, pos: s.pos, troops: s.troops,
+        weaponRange: s.weaponDef?.range || CONFIG.RIFLE_RANGE,
+        unitType: s.unitType || 'rifle',
+      })),
     };
   }
 
   async decideTurn(mapState) {
     if (this.usingFallback) {
-      return this.fallback.decide(mapState.enemy, mapState.ally);
+      return this.fallback.decide(mapState.enemy, mapState.ally, mapState);
     }
     if (Date.now() < this._rateLimitUntil) {
       const remainSec = Math.ceil((this._rateLimitUntil - Date.now()) / 1000);
       this._log(`⏳ Gemini 쿨다운 중 (${remainSec}초 남음) → 폴백 AI`, 'system');
-      return this.fallback.decide(mapState.enemy, mapState.ally);
+      return this.fallback.decide(mapState.enemy, mapState.ally, mapState);
     }
     try {
       const actions = await this.gemini.call(mapState);
@@ -70,7 +80,7 @@ class EnemyAI {
       } else {
         this._log(`[AI] Gemini 오류 → 이번 턴 폴백 (${e.message})`, 'system');
       }
-      return this.fallback.decide(mapState.enemy, mapState.ally);
+      return this.fallback.decide(mapState.enemy, mapState.ally, mapState);
     }
   }
 

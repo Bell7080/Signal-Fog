@@ -1,64 +1,165 @@
 /* ============================================================
-   SurvivalStats.js — 생존 스탯 계산 및 HUD 연동
-   예선 MVP: 피로도·배고픔·수면 HUD 표시 + 매 턴 자동 감소
-             고갈 시 AP -1 패널티
+   SurvivalStats.js — 생존 스탯 시스템 v2
+   ────────────────────────────────────────────────────────────
+   관리 항목:
+     · water  (수분)   — 이동/공격/턴마다 소모, 인벤토리 자동 소모
+     · ration (식량)   — 이동/공격/턴마다 소모, 인벤토리 자동 소모
+     · morale (정신력) — 공격/턴마다 소모, 수면 중 회복
+     · inv_ration      — 소지 전투식량 개수
+     · inv_water       — 소지 물 개수
 
-   구현 순서 (하나씩 추가):
-     1. initStats()      — 분대별 초기 스탯 설정
-     2. tickDecay()      — 턴 종료 시 스탯 자동 감소
-     3. checkPenalty()   — 스탯 고갈 분대에 AP -1 패널티 적용
-     4. updateHUD()      — HUD 바 DOM 갱신
+   흐름 (TurnManager.startInputPhase에서 tick() 호출):
+     tick(squads) →
+       수동 턴 소모 →
+       인벤토리 자동 소모 →
+       수면 갱신 (정신력 회복 / 기상) →
+       굶주림 피해
+
+   행동 시 (GameScene._issueMove / _issueAttack에서 호출):
+     consumeMove(squad)   — 이동 1회 비용
+     consumeAttack(squad) — 공격 1회 비용
+
+   수면 (sleeping):
+     · morale < SLEEP_BELOW → sleeping = true (명령 불가)
+     · 수면 중 매 턴 morale += SLEEP_MORALE_REGEN
+     · morale >= WAKE_ABOVE → 기상
+
+   굶주림 (starvation):
+     · water = 0 AND ration = 0 → 매 STARVATION_INTERVAL턴 병력 -1
+     · troops = 0 → 분대 전멸
    ============================================================ */
 
 class SurvivalStats {
 
-  /** @param {number} squadCount */
-  constructor(squadCount = CONFIG.SQUAD_COUNT) {
-    this.stats = {};
-    for (let i = 1; i <= squadCount; i++) {
-      this.stats[i] = this.initStats();
+  /* ── 분대 초기화 ─────────────────────────────────────────── */
+  /**
+   * SupplySystem.initSquad 이후 추가 필드 초기화
+   * (water, ration은 SupplySystem이 이미 설정)
+   * @param {object} squad
+   */
+  initSquad(squad) {
+    if (!squad.supply) squad.supply = {
+      water:  CONFIG.SUPPLY_WATER_MAX,
+      ration: CONFIG.SUPPLY_RATION_MAX,
+    };
+    squad.supply.morale    = CONFIG.SURVIVAL_MORALE_MAX;
+    squad.supply.inv_ration = CONFIG.SURVIVAL_INV_RATION_START;
+    squad.supply.inv_water  = CONFIG.SURVIVAL_INV_WATER_START;
+    squad.sleeping    = false;
+    squad._starveTick = 0;
+  }
+
+  /* ── 턴당 처리 ───────────────────────────────────────────── */
+  /**
+   * 매 턴 시작 시 호출
+   * @param {Array} squads - 아군 살아있는 분대
+   * @returns {Array<{squad, event: 'sleep'|'wake'|'starve'|null}>}
+   */
+  tick(squads) {
+    const events = [];
+    for (const s of squads) {
+      if (!s.alive || !s.supply) continue;
+
+      // 1. 수동 소모 (턴당)
+      s.supply.water  = Math.max(0, s.supply.water  - CONFIG.SURVIVAL_WATER_DECAY_TURN);
+      s.supply.ration = Math.max(0, s.supply.ration - CONFIG.SURVIVAL_RATION_DECAY_TURN);
+      s.supply.morale = Math.max(0, s.supply.morale - CONFIG.SURVIVAL_MORALE_DECAY_TURN);
+
+      // 2. 인벤토리 자동 소모
+      this._autoConsume(s);
+
+      // 3. 수면 갱신
+      const sleepEvt = this._updateSleeping(s);
+      if (sleepEvt) events.push({ squad: s, event: sleepEvt });
+
+      // 4. 굶주림 피해
+      if (this._checkStarvation(s)) events.push({ squad: s, event: 'starve' });
+    }
+    return events;
+  }
+
+  /* ── 행동 소모: 이동 ─────────────────────────────────────── */
+  /**
+   * @param {object} squad
+   */
+  consumeMove(squad) {
+    if (!squad.supply) return;
+    squad.supply.water  = Math.max(0, squad.supply.water  - CONFIG.SURVIVAL_MOVE_WATER);
+    squad.supply.ration = Math.max(0, squad.supply.ration - CONFIG.SURVIVAL_MOVE_RATION);
+    this._autoConsume(squad);
+  }
+
+  /* ── 행동 소모: 공격 ─────────────────────────────────────── */
+  /**
+   * @param {object} squad
+   */
+  consumeAttack(squad) {
+    if (!squad.supply) return;
+    squad.supply.morale = Math.max(0, squad.supply.morale - CONFIG.SURVIVAL_ATTACK_MORALE);
+    squad.supply.water  = Math.max(0, squad.supply.water  - CONFIG.SURVIVAL_ATTACK_WATER);
+    squad.supply.ration = Math.max(0, squad.supply.ration - CONFIG.SURVIVAL_ATTACK_RATION);
+    this._autoConsume(squad);
+  }
+
+  /* ── 배급소 인근 정신력 회복 ─────────────────────────────── */
+  /**
+   * 배급소 반경 내에 있는 분대의 정신력 소폭 회복
+   * @param {object} squad
+   */
+  recoverMoraleNearDepot(squad) {
+    if (!squad.supply) return;
+    squad.supply.morale = Math.min(
+      CONFIG.SURVIVAL_MORALE_MAX,
+      squad.supply.morale + CONFIG.SURVIVAL_DEPOT_MORALE_REGEN
+    );
+  }
+
+  /* ── 인벤토리 자동 소모 ──────────────────────────────────── */
+  _autoConsume(squad) {
+    const t = CONFIG.SURVIVAL_AUTO_USE_THRESHOLD;
+    const r = CONFIG.SURVIVAL_ITEM_RESTORE;
+    if (squad.supply.ration < t && squad.supply.inv_ration > 0) {
+      squad.supply.ration = Math.min(CONFIG.SUPPLY_RATION_MAX, squad.supply.ration + r);
+      squad.supply.inv_ration--;
+    }
+    if (squad.supply.water < t && squad.supply.inv_water > 0) {
+      squad.supply.water = Math.min(CONFIG.SUPPLY_WATER_MAX, squad.supply.water + r);
+      squad.supply.inv_water--;
     }
   }
 
-  /** 초기 스탯 값 반환 */
-  initStats() {
-    return {
-      fatigue: 100,   // 피로도 (높을수록 좋음)
-      hunger:  100,   // 포만도
-      sleep:   100,   // 수면
-    };
+  /* ── 수면 갱신 ───────────────────────────────────────────── */
+  _updateSleeping(squad) {
+    if (!squad.sleeping && squad.supply.morale < CONFIG.SURVIVAL_MORALE_SLEEP_BELOW) {
+      squad.sleeping = true;
+      return 'sleep';
+    }
+    if (squad.sleeping) {
+      squad.supply.morale = Math.min(
+        CONFIG.SURVIVAL_MORALE_MAX,
+        squad.supply.morale + CONFIG.SURVIVAL_SLEEP_MORALE_REGEN
+      );
+      if (squad.supply.morale >= CONFIG.SURVIVAL_MORALE_WAKE_ABOVE) {
+        squad.sleeping = false;
+        return 'wake';
+      }
+    }
+    return null;
   }
 
-  /**
-   * 턴 종료 시 스탯 자동 감소
-   * @param {number} squadId
-   */
-  tickDecay(squadId) {
-    const s = this.stats[squadId];
-    if (!s) return;
-    s.fatigue = Math.max(0, s.fatigue - 5);
-    s.hunger  = Math.max(0, s.hunger  - 4);
-    s.sleep   = Math.max(0, s.sleep   - 3);
-  }
-
-  /**
-   * 스탯 고갈 시 AP 패널티 판정
-   * @param {number} squadId
-   * @returns {number} - AP 패널티 수치 (0 또는 -1)
-   */
-  checkPenalty(squadId) {
-    const s = this.stats[squadId];
-    if (!s) return 0;
-    const depleted = s.fatigue === 0 || s.hunger === 0 || s.sleep === 0;
-    return depleted ? -1 : 0;
-  }
-
-  /**
-   * 특정 분대의 HUD 스탯 바 갱신
-   * @param {number} squadId
-   */
-  updateHUD(squadId) {
-    // TODO: 분대별 stat bar DOM 업데이트
-    // 현재 left panel은 선택된 분대의 스탯을 표시하도록 확장 예정
+  /* ── 굶주림 피해 ─────────────────────────────────────────── */
+  _checkStarvation(squad) {
+    if (squad.supply.water > 0 || squad.supply.ration > 0) {
+      squad._starveTick = 0;
+      return false;
+    }
+    squad._starveTick = (squad._starveTick || 0) + 1;
+    if (squad._starveTick >= CONFIG.SURVIVAL_STARVATION_INTERVAL) {
+      squad._starveTick = 0;
+      squad.troops = Math.max(0, squad.troops - 1);
+      if (squad.troops <= 0) squad.alive = false;
+      return true;
+    }
+    return false;
   }
 }

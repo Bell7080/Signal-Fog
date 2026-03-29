@@ -44,6 +44,39 @@ class TurnManager {
       // 보급 부족 AP 패널티 반영
       if (s._apPenalty) { ap = Math.max(0, ap - s._apPenalty); }
       s.ap = ap;
+
+      // ── 이동AP 리셋 (무기 종류별 이동 가능 거리) ──
+      if (s.sleeping) {
+        s.moveAp = 0; // 수면 중 이동 불가
+      } else if (s.unitType === 'mortar') {
+        s.moveAp = s.mortarState === 'ready' ? 0 : 1; // 거치 시 이동 불가
+      } else if (s.unitType === 'mg') {
+        s.moveAp = Math.max(0, CONFIG.SQUAD_MOVE_AP - CONFIG.MG_MOVE_COST);
+      } else {
+        s.moveAp = CONFIG.SQUAD_MOVE_AP;
+      }
+    }
+
+    // ── 생존 tick: 정신력/배고픔/물 자연 감소, 수면 처리, 아사 판정 ──
+    if (this.scene.survival) {
+      const prev = this.scene.squads.filter(s => s.side === 'ally' && s.alive).map(s => ({
+        id: s.id, sleeping: s.sleeping, alive: s.alive,
+      }));
+      this.scene.survival.tick(this.scene.squads.filter(s => s.side === 'ally' && s.alive));
+      for (const s of this.scene.squads.filter(s => s.side === 'ally' && s.alive)) {
+        const p = prev.find(x => x.id === s.id);
+        if (!p) continue;
+        if (!p.sleeping && s.sleeping)
+          chatUI.addLog('SYSTEM', null, `A${s.id}분대 정신력 저하 — 수면(행동 불가)`, 'system');
+        if (p.sleeping && !s.sleeping)
+          chatUI.addLog('SYSTEM', null, `A${s.id}분대 수면 회복 — 행동 가능`, 'system');
+      }
+      // 아사 판정 (alive가 false로 바뀐 분대)
+      for (const p of prev) {
+        const s = this.scene.squads.find(x => x.id === p.id);
+        if (p.alive && s && !s.alive)
+          chatUI.addLog('SYSTEM', null, `A${s.id}분대 아사 — 전원 사망`, 'system');
+      }
     }
 
     // 보급 tick (소모 → 배급소 보급 → 패널티 계산)
@@ -81,6 +114,7 @@ class TurnManager {
     if (typeof this.scene._updateFog === 'function')            this.scene._updateFog();
     if (typeof this.scene._updateOverlapVisuals === 'function') this.scene._updateOverlapVisuals();
     this.scene._syncPanel();
+    if (typeof this.scene._syncCaptureHUD === 'function')       this.scene._syncCaptureHUD();
   }
 
   /* ── CONFIRM 진입점 ── */
@@ -169,12 +203,12 @@ class TurnManager {
       actions = await this.scene.enemyAI.decideTurn(mapState);
     } catch (err) {
       console.error('decideTurn 오류:', err);
-      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally);
+      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally, mapState);
     }
 
     if (!Array.isArray(actions)) {
       console.warn('actions가 배열이 아님:', actions);
-      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally);
+      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally, mapState);
     }
 
     console.log(`[TurnManager] 적군 액션 ${actions.length}개:`, actions);
@@ -267,15 +301,30 @@ class TurnManager {
       return;
     }
 
-    /* ── 목표 지점 점령 판정 ──
-       DEMO_OBJECTIVE 전역변수 대신 this.scene._DEMO_OBJECTIVE 사용 (v0.2 fix) */
-    const obj = this.scene._DEMO_OBJECTIVE;
-    if (obj) {
-      const onObj = allyAlive.find(s => s.pos.col === obj.col && s.pos.row === obj.row);
-      if (onObj) {
-        const objLabel = `${String.fromCharCode(65 + (obj.col % 26))}-${String(obj.row + 1).padStart(3,'0')}`;
-        chatUI.addLog('SYSTEM', null,
-          `A${onObj.id}분대 목표 지점(${objLabel}) 점령 중 — ${CONFIG.CAPTURE_HOLD_TURNS}턴 유지 시 승리`, 'system');
+    /* ── 목표 지점 점령 판정 (ObjectiveSystem) ── */
+    const objSys = this.scene.objective;
+    if (objSys) {
+      // 발견 여부 업데이트
+      objSys.checkDiscovery(allyAlive);
+
+      // 게이지 tick
+      const { allyCount, enemyCount, delta } = objSys.tick(allyAlive, enemyAlive);
+
+      if (objSys.discovered) {
+        const pct = objSys.getGaugePct();
+        if (allyCount > 0 || enemyCount > 0) {
+          const dir = delta > 0 ? `▲+${delta}` : delta < 0 ? `▼${delta}` : '교착';
+          chatUI.addLog('SYSTEM', null,
+            `점령지 — 아군 ${allyCount}분대 / 적군 ${enemyCount}분대 | 게이지 ${pct}% (${dir})`, 'system');
+        }
+        if (objSys.isWon()) {
+          this._showResult(true, {
+            turns: this.turn, reason: '점령지 완전 점령',
+            allyAlive: allyAlive.length,  allyTotal: allyAll.length,
+            enemyAlive: enemyAlive.length, enemyTotal: enemyAll.length,
+          });
+          return;
+        }
       }
     }
 
