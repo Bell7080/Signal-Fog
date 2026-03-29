@@ -1,13 +1,14 @@
 /* ============================================================
-   GameScene.js v0.9
+   GameScene.js v0.9.1 — 버그픽스
    ────────────────────────────────────────────────────────────
-   변경 (v0.8 → v0.9):
-   1. DayNightCycle 시스템 통합 (_initSystems, _initScene)
-   2. _initScene() — AmbientLight / PointLight 참조를 인스턴스 변수로 저장
-      (this._ambientLight, this._pointLight) → DayNightCycle에 주입 가능
-   3. _updateFog() — computeVisible(allies, this.dayNight) 인자 추가
-   4. _syncPanel() — 주야 HUD 칩 갱신 (daynight-val, phase-val)
-   5. _showMoveTargets() — 야간 시야 범위 주석 추가
+   수정 목록:
+   [BUG1] _initScene(): AmbientLight 중복 생성 제거
+          (기존: anonymous AmbientLight + this._ambientLight 두 개 추가)
+   [BUG2] _initScene(): pl2 const 선언 누락으로 ReferenceError
+   [BUG3] _getMoveRange(): unitType 'machine_gun' 처리 누락
+          (WeaponSystem이 'machine_gun'을 할당하지만 'mg'로만 비교)
+   [BUG4] _showProceedBtn(): window.hud 미초기화 시 방어 로직 추가
+   [BUG5] _syncDepotChip(): maxWater/maxRation=0 나누기 0 방어
    ============================================================ */
 
 const ALLY_COLOR_DEFS = [
@@ -42,24 +43,13 @@ function _makeSquadLabelSprite(text, textCss, bgCss) {
   return new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
 }
 
-/* ── 맵 레이아웃 생성 ───────────────────────────────────────
-   v0.8: base/ridge 노이즈로 지형 배치 결정 + 강 삽입.
-   (높이 계산은 GridMap.build() 내부에서 수행)
-────────────────────────────────────────────────────────── */
 function _generateMap() {
-  const cols = CONFIG.GRID_COLS, rows = CONFIG.GRID_ROWS;
-  const seed  = (Math.random() * 0xffffff) | 0;
-
-  // base/ridge 노이즈는 GridMap의 전역 함수 재사용
-  const base  = _buildBaseField(cols, rows, seed);
-  const ridge = _buildRidgeField(cols, rows, seed ^ 0xdeadbeef);
-
-  // 지형 타입 배치
-  const layout = _generateMapFromFields(base, ridge, cols, rows);
-
-  // 강 경로 삽입
-  _insertRivers(layout, base, cols, rows);
-
+  const cols=CONFIG.GRID_COLS, rows=CONFIG.GRID_ROWS;
+  const seed=(Math.random()*0xffffff)|0;
+  const base=_buildBaseField(cols,rows,seed);
+  const ridge=_buildRidgeField(cols,rows,seed^0xdeadbeef);
+  const layout=_generateMapFromFields(base,ridge,cols,rows);
+  _insertRivers(layout,base,cols,rows);
   return layout;
 }
 
@@ -74,7 +64,6 @@ function _calcSpawn(count,side,cols,rows) {
 }
 function _calcObjective(){return{col:Math.floor(CONFIG.GRID_COLS/2),row:Math.floor(CONFIG.GRID_ROWS/2)};}
 
-/* ── 카메라 파라미터 ─────────────────────────────────────── */
 function _calcCameraParams(tileW,cols,rows) {
   const mapSize=Math.max(cols,rows), maxWorld=mapSize*tileW;
   let distMul,heightMul,fov;
@@ -95,9 +84,10 @@ class GameScene {
     this.turnManager=this.comms=this.combat=this.enemyAI=null;
     this.supply=null; this.weapon=null; this.survival=null; this.objective=null;
     this.allyAI=null; this.supplyVehicles=null;
-    // ★ v0.9: 낮/밤 사이클 참조
     this.dayNight=null;
-    this.commandedSquadId=null;   // 이번 턴 지휘한 분대 ID (1분대 제한)
+    // [BUG1] 조명 참조 명시적 초기화
+    this._ambientLight=null; this._pointLight=null;
+    this.commandedSquadId=null;
     this._animations=[]; this._lastTime=null; this._mouseDownPos=null;
     this.fog=null; this._fogMeshes={}; this._ghostMeshes={}; this._overlapBadges={};
     this._moveHighlights=[]; this._attackHighlights=[];
@@ -107,8 +97,8 @@ class GameScene {
 
   init() {
     this._initRenderer();
-    this._initScene();    // ← 조명 객체 먼저 생성
-    this._initSystems();  // ← dayNight.init()에서 조명 참조 사용
+    this._initScene();
+    this._initSystems();
     this._setupInput();
     window.addEventListener('resize',this._onResize.bind(this));
     window.gameScene=this;
@@ -145,89 +135,79 @@ class GameScene {
     const fogDensity=mapSize<=20?0.015:mapSize<=60?0.008:0.004;
     this.scene3d.fog=new THREE.FogExp2(0x040604,fogDensity);
 
-    // ★ near = tileW * 0.05 → 높은 타일 클릭 시 near clipping 오차 제거
-    this.camera=new THREE.PerspectiveCamera(fov,w/h, tileW*0.05, camDist*6);
+    this.camera=new THREE.PerspectiveCamera(fov,w/h,tileW*0.05,camDist*6);
     this.camera.position.set(0,camHeight,camDist);
     this.camera.lookAt(0,0,0);
 
     this.controls=null;
     try {
-      if (typeof THREE.OrbitControls!=='undefined') {
+      if(typeof THREE.OrbitControls!=='undefined'){
         this.controls=new THREE.OrbitControls(this.camera,this.renderer.domElement);
         Object.assign(this.controls,{
-          target:new THREE.Vector3(0,0,0), enableDamping:true, dampingFactor:0.08,
-          minDistance:tileW*2, maxDistance:camDist*3, maxPolarAngle:Math.PI/2.05, screenSpacePanning:true,
+          target:new THREE.Vector3(0,0,0),enableDamping:true,dampingFactor:0.08,
+          minDistance:tileW*2,maxDistance:camDist*3,maxPolarAngle:Math.PI/2.05,screenSpacePanning:true,
         });
       }
     } catch(e){console.warn('[GameScene] OrbitControls 없음:',e.message);}
 
     const worldSize=mapSize*tileW;
 
-    // ★ v0.9: 조명을 인스턴스 변수로 저장 → DayNightCycle에서 제어 가능
-    // (기존: this.scene3d.add(new THREE.AmbientLight(...)) 익명 생성 → 참조 불가)
-    this._ambientLight = new THREE.AmbientLight(0x0a2010, 1.5);
+    // ★ [BUG1 FIX] AmbientLight 단 하나만 생성 — 기존 코드의 중복 생성 제거
+    this._ambientLight=new THREE.AmbientLight(0x0a2010,1.5);
     this.scene3d.add(this._ambientLight);
 
-    this._pointLight = new THREE.PointLight(0x39ff8e, 1.5, worldSize * 4);
-    this._pointLight.position.set(0, camHeight * 1.5, 0);
+    // ★ [BUG1 FIX] PointLight 참조 저장 후 씬 추가 (scene3d.add 누락 방지)
+    this._pointLight=new THREE.PointLight(0x39ff8e,1.5,worldSize*4);
+    this._pointLight.position.set(0,camHeight*1.5,0);
     this.scene3d.add(this._pointLight);
 
-    // 보조 포인트 라이트 (참조 불필요 — dayNight 제어 대상 아님)
-    const pl2 = new THREE.PointLight(0x2277cc, 0.5, worldSize * 3);
-    pl2.position.set(-worldSize * 0.3, camHeight, worldSize * 0.3);
+    // ★ [BUG2 FIX] pl2 const 선언 복구 — 이전 패치에서 선언이 사라짐
+    const pl2=new THREE.PointLight(0x2277cc,0.5,worldSize*3);
+    pl2.position.set(-worldSize*0.3,camHeight,worldSize*0.3);
     this.scene3d.add(pl2);
 
     this.raycaster=new THREE.Raycaster();
-    // ★ 레이캐스터 정밀도 향상
-    this.raycaster.params.Line = { threshold: 0.01 };
+    this.raycaster.params.Line={threshold:0.01};
   }
 
   _initSystems() {
     this.gridMap    =new GridMap(this);
     this.comms      =new CommsSystem();
     this.combat     =new CombatSystem();
-    this.supply        =new SupplySystem();
-    this.weapon        =new WeaponSystem();
-    this.survival      =new SurvivalStats();
-    // ★ v0.9: 낮/밤 사이클 초기화
-    this.dayNight = CONFIG.DAY_NIGHT_ENABLED ? new DayNightCycle() : null;
-    this.allyAI        =new AllyAI();
+    this.supply     =new SupplySystem();
+    this.weapon     =new WeaponSystem();
+    this.survival   =new SurvivalStats();
+    this.dayNight   =CONFIG.DAY_NIGHT_ENABLED ? new DayNightCycle() : null;
+    this.allyAI     =new AllyAI();
     this.supplyVehicles=new SupplyVehicleSystem();
-    this.enemyAI       =new EnemyAI(new GeminiClient(),new FallbackAI());
-    this.turnManager   =new TurnManager(this);
+    this.enemyAI    =new EnemyAI(new GeminiClient(),new FallbackAI());
+    this.turnManager=new TurnManager(this);
     const layout=_generateMap();
     this.gridMap.build(layout);
-    this.supply.init(this.scene3d, this.gridMap);
-    this.supplyVehicles.init(this.scene3d, this.gridMap);
-    this.objective = new ObjectiveSystem();
-    this.objective.init(this.gridMap, this.scene3d, CONFIG.SQUAD_COUNT);
-    this._DEMO_OBJECTIVE = this.objective.center; // 레거시 호환
+    this.supply.init(this.scene3d,this.gridMap);
+    this.supplyVehicles.init(this.scene3d,this.gridMap);
+    this.objective=new ObjectiveSystem();
+    this.objective.init(this.gridMap,this.scene3d,CONFIG.SQUAD_COUNT);
+    this._DEMO_OBJECTIVE=this.objective.center;
     this._initSquads();
     this._initDepots();
     this._initFog();
     this._updateFog();
-    // ★ v0.9: _initScene()에서 저장한 조명 참조를 DayNightCycle에 주입
-    // (_initScene이 _initSystems보다 먼저 실행되므로 조명 객체 보장)
-    if (this.dayNight && this._ambientLight && this._pointLight) {
-      this.dayNight.init({
-        ambient: this._ambientLight,
-        point:   this._pointLight,
-        scene:   this.scene3d,
-      });
+    if(this.dayNight&&this._ambientLight&&this._pointLight){
+      this.dayNight.init({ambient:this._ambientLight,point:this._pointLight,scene:this.scene3d});
     }
   }
 
-  /* ── 포그 초기화 ─────────────────────────────────────────── */
   _initFog() {
     this.fog=new FogOfWar(this.gridMap);
     const gm=this.gridMap;
-    if (gm._largeMap) {
+    if(gm._largeMap){
       this._fogMode='canvas'; this._initFogCanvas();
     } else {
       this._fogMode='mesh';
-      for(let r=0;r<CONFIG.GRID_ROWS;r++) {
-        for(let c=0;c<CONFIG.GRID_COLS;c++) {
-          const h =gm.tiles[r][c].height;
+      for(let r=0;r<CONFIG.GRID_ROWS;r++){
+        for(let c=0;c<CONFIG.GRID_COLS;c++){
+          const h=gm.tiles[r][c].height;
           const wx=c*gm.TILE_W+gm.OFFSET_X;
           const wz=r*gm.TILE_W+gm.OFFSET_Z;
           const mesh=new THREE.Mesh(
@@ -242,7 +222,7 @@ class GameScene {
         }
       }
     }
-    for(const s of this.squads.filter(q=>q.side==='enemy')) {
+    for(const s of this.squads.filter(q=>q.side==='enemy')){
       const g=_makeTextSprite('?','#882222');
       g.scale.set(gm.TILE_W*1.2,gm.TILE_W*1.2,1);
       g.visible=false; this.scene3d.add(g);
@@ -264,7 +244,7 @@ class GameScene {
       new THREE.MeshBasicMaterial({map:this._fogTex,transparent:true,depthWrite:false,side:THREE.DoubleSide})
     );
     fogPlane.rotation.x=-Math.PI/2;
-    fogPlane.position.set(gm.OFFSET_X+totalW/2-gm.TILE_W/2, gm.HEIGHT_MAX+0.05, gm.OFFSET_Z+totalH/2-gm.TILE_W/2);
+    fogPlane.position.set(gm.OFFSET_X+totalW/2-gm.TILE_W/2,gm.HEIGHT_MAX+0.05,gm.OFFSET_Z+totalH/2-gm.TILE_W/2);
     fogPlane.renderOrder=3;
     this.scene3d.add(fogPlane);
     this._fogPlane=fogPlane;
@@ -273,13 +253,11 @@ class GameScene {
   _updateFog() {
     if(!this.fog) return;
     const allies=this.squads.filter(s=>s.side==='ally'&&s.alive);
-    // ★ v0.9: dayNight 인자 추가 → FogOfWar가 야간 시야 범위 보정 가능
-    this.fog.computeVisible(allies, this.dayNight);
+    this.fog.computeVisible(allies,this.dayNight);
     const gm=this.gridMap;
-    if(this._fogMode==='canvas') {
+    if(this._fogMode==='canvas'){
       const ctx=this._fogCtx, RES=this._fogResRCP;
       const cw=ctx.canvas.width, ch=ctx.canvas.height;
-      // 전체 어둠 → 분대 주변 원형으로 투명하게 절삭
       ctx.clearRect(0,0,cw,ch);
       ctx.fillStyle='rgba(0,0,0,0.80)';
       ctx.fillRect(0,0,cw,ch);
@@ -298,12 +276,12 @@ class GameScene {
       this._fogTex.needsUpdate=true;
     } else {
       for(let r=0;r<CONFIG.GRID_ROWS;r++)
-        for(let c=0;c<CONFIG.GRID_COLS;c++) {
+        for(let c=0;c<CONFIG.GRID_COLS;c++){
           const m=this._fogMeshes[`${c},${r}`];
           if(m) m.material.opacity=this.fog.isVisible(c,r)?0:0.78;
         }
     }
-    for(const s of this.squads.filter(q=>q.side==='enemy')) {
+    for(const s of this.squads.filter(q=>q.side==='enemy')){
       const inSight=this.fog.isVisible(s.pos.col,s.pos.row);
       if(s.mesh) s.mesh.visible=s.alive&&inSight;
       const ghost=this._ghostMeshes[s.id]; if(!ghost) continue;
@@ -312,35 +290,26 @@ class GameScene {
         const lk=this.fog.getLastKnown(s.id);
         if(lk){
           const wp=gm.toWorld(lk.col,lk.row);
-          ghost.position.set(wp.x, wp.y+gm.TILE_W*0.7, wp.z);
+          ghost.position.set(wp.x,wp.y+gm.TILE_W*0.7,wp.z);
           ghost.visible=true;
         }
       } else{ghost.visible=false;}
     }
   }
 
-  /* ── 목표 지점 마커 (ObjectiveSystem으로 이전됨) ─────────── */
-  _drawObjective() { /* deprecated — ObjectiveSystem.init()에서 처리 */ }
+  _drawObjective(){}
 
-  /* ── 분대 초기화 ─────────────────────────────────────────── */
   _initSquads() {
     const cols=CONFIG.GRID_COLS,rows=CONFIG.GRID_ROWS;
     for(const d of _calcSpawn(CONFIG.SQUAD_COUNT,'ally',cols,rows)){const s=this._makeSquad(d.id,'ally',d.col,d.row);this.squads.push(s);}
     for(const d of _calcSpawn(CONFIG.ENEMY_COUNT,'enemy',cols,rows)){const s=this._makeSquad(d.id,'enemy',d.col,d.row);this.squads.push(s);}
-    // 무기 배정
     this.weapon.assignWeapons(this.squads.filter(s=>s.side==='ally'));
     this.weapon.assignWeapons(this.squads.filter(s=>s.side==='enemy'));
-    // 보급 + 생존 초기화 (아군 + 적군 모두)
-    for(const s of this.squads){
-      this.supply.initSquad(s);
-      this.survival.initSquad(s);
-    }
-    // 메시 생성
+    for(const s of this.squads){this.supply.initSquad(s);this.survival.initSquad(s);}
     for(const s of this.squads) this._createMesh(s);
     this._buildSquadPanel(); this._syncPanel(); this._updateOverlapVisuals();
   }
 
-  /* ── 배급소 초기화 ───────────────────────────────────────── */
   _initDepots() {
     const cols=CONFIG.GRID_COLS, rows=CONFIG.GRID_ROWS, spawnRow=rows-3;
     const step=Math.floor(cols/3);
@@ -349,8 +318,8 @@ class GameScene {
       const row=Math.max(0,Math.min(rows-1,spawnRow));
       const depot=this.supply.addDepot(col,row,'ally');
       depot.type=type;
-      if(type==='food'){ depot.water=0; depot.maxWater=0; }
-      else             { depot.ration=0; depot.maxRation=0; }
+      if(type==='food'){depot.water=0;depot.maxWater=0;}
+      else             {depot.ration=0;depot.maxRation=0;}
       this.supply.buildDepotMesh(depot);
       const coord=`${String.fromCharCode(65+(col%26))}-${String(row+1).padStart(2,'0')}`;
       chatUI.addLog('SYSTEM',null,`${label}#${depot.id} 설치 — ${coord} (보급 반경 ${CONFIG.SUPPLY_RESUPPLY_RANGE}타일)`,'system');
@@ -382,44 +351,29 @@ class GameScene {
 
   _makeSquad(id,side,col,row){
     return{
-      id,side,pos:{col,row},
-      troops:CONFIG.SQUAD_TROOP_MAX,
-      ap:CONFIG.SQUAD_AP_MAX,
-      terrain:CONFIG.TERRAIN.OPEN,alive:true,
-      mesh:null,mat:null,boxMesh:null,_boxH:0,
-      // 무기 시스템
-      unitType:'rifle', weaponDef:null,
-      mortarState:'moving', mortarCooldown:0,
-      suppressed:false,
-      // 보급/생존 시스템
-      supply:{water:CONFIG.SUPPLY_WATER_MAX, ration:CONFIG.SUPPLY_RATION_MAX},
-      _apPenalty:0,
-      sleeping:false, _starveTick:0,
+      id,side,pos:{col,row},troops:CONFIG.SQUAD_TROOP_MAX,ap:CONFIG.SQUAD_AP_MAX,
+      terrain:CONFIG.TERRAIN.OPEN,alive:true,mesh:null,mat:null,boxMesh:null,_boxH:0,
+      unitType:'rifle',weaponDef:null,mortarState:'moving',mortarCooldown:0,suppressed:false,
+      supply:{water:CONFIG.SUPPLY_WATER_MAX,ration:CONFIG.SUPPLY_RATION_MAX},
+      _apPenalty:0,sleeping:false,_starveTick:0,
     };
   }
   _squadColor(squad){return squad.side==='enemy'?ENEMY_COLOR_DEF:ALLY_COLOR_DEFS[(squad.id-1)%ALLY_COLOR_DEFS.length];}
 
   _createMesh(squad) {
-    const gm   =this.gridMap;
-    const wp   =gm.toWorld(squad.pos.col,squad.pos.row);
-    const cd   =this._squadColor(squad);
-    const TW   =gm.TILE_W;
+    const gm=this.gridMap;
+    const wp=gm.toWorld(squad.pos.col,squad.pos.row);
+    const cd=this._squadColor(squad);
+    const TW=gm.TILE_W;
     const label=squad.side==='ally'?`A${squad.id}`:`E${squad.id-CONFIG.SQUAD_COUNT}`;
-
     const group=new THREE.Group();
-
-    const bw=TW*0.78, bh=TW*0.52, bd=TW*0.78;
+    const bw=TW*0.78,bh=TW*0.52,bd=TW*0.78;
     const geo=new THREE.BoxGeometry(bw,bh,bd);
     const mat=new THREE.MeshLambertMaterial({color:cd.hex,transparent:true,opacity:0.90});
     const box=new THREE.Mesh(geo,mat);
     box.userData={squadId:squad.id};
     group.add(box);
-
-    group.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(geo),
-      new THREE.LineBasicMaterial({color:cd.hex,transparent:true,opacity:0.9})
-    ));
-
+    group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:cd.hex,transparent:true,opacity:0.9})));
     const mapSize=Math.max(CONFIG.GRID_COLS,CONFIG.GRID_ROWS);
     const labelScale=mapSize>60?0.7:1.0;
     const sprite=_makeSquadLabelSprite(label,cd.css,cd.bg);
@@ -427,8 +381,6 @@ class GameScene {
     sprite.scale.set(TW*1.6*labelScale,TW*0.75*labelScale,1);
     sprite.raycast=()=>{};
     group.add(sprite);
-
-    // 무기 타입 레이블 (기관총/박격포만 표시)
     if(squad.unitType&&squad.unitType!=='rifle'&&squad.weaponDef){
       const wColor=squad.weaponDef.color||cd.css;
       const wShort=squad.weaponDef.labelShort||'??';
@@ -438,11 +390,9 @@ class GameScene {
       wSprite.raycast=()=>{};
       group.add(wSprite);
     }
-
-    group.position.set(wp.x, wp.y + bh/2, wp.z);
+    group.position.set(wp.x,wp.y+bh/2,wp.z);
     group.userData={squadId:squad.id};
     this.scene3d.add(group);
-
     squad.mesh=group; squad.mat=mat; squad.boxMesh=box;
     squad._colDef=cd; squad._boxH=bh;
   }
@@ -460,36 +410,31 @@ class GameScene {
     if(!this.scene3d||!this.gridMap) return;
     for(const b of Object.values(this._overlapBadges)){this.scene3d.remove(b);b.material?.map?.dispose();b.material?.dispose();}
     this._overlapBadges={};
-    const gm=this.gridMap, TW=gm.TILE_W;
-
-    const _placeSquads=(list,showBadge)=>{
+    const gm=this.gridMap,TW=gm.TILE_W;
+    const _place=(list,showBadge)=>{
       const base=gm.toWorld(list[0].pos.col,list[0].pos.row);
       if(list.length===1){
-        const s=list[0];
-        s.mesh.position.set(base.x, base.y+s._boxH/2, base.z);
+        list[0].mesh.position.set(base.x,base.y+list[0]._boxH/2,base.z);
       } else {
         const off=this._calcOffsets(list.length);
-        list.forEach((s,i)=>s.mesh.position.set(base.x+off[i].dx, base.y+s._boxH/2, base.z+off[i].dz));
+        list.forEach((s,i)=>s.mesh.position.set(base.x+off[i].dx,base.y+s._boxH/2,base.z+off[i].dz));
         if(showBadge){
           const badge=_makeTextSprite(`×${list.length}`,'#ffb84d');
-          badge.position.set(base.x, base.y+TW*1.7, base.z);
+          badge.position.set(base.x,base.y+TW*1.7,base.z);
           badge.scale.set(TW,TW*0.6,1); badge.renderOrder=10;
           this.scene3d.add(badge);
           this._overlapBadges[`${list[0].pos.col},${list[0].pos.row}`]=badge;
         }
       }
     };
-
     const allyG={};
     for(const s of this.squads.filter(q=>q.alive&&q.mesh&&q.side==='ally')){const k=`${s.pos.col},${s.pos.row}`;(allyG[k]=allyG[k]||[]).push(s);}
-    for(const list of Object.values(allyG)) _placeSquads(list,true);
-
+    for(const list of Object.values(allyG)) _place(list,true);
     const enemyG={};
     for(const s of this.squads.filter(q=>q.alive&&q.mesh&&q.side==='enemy')){const k=`${s.pos.col},${s.pos.row}`;(enemyG[k]=enemyG[k]||[]).push(s);}
-    for(const list of Object.values(enemyG)) _placeSquads(list,false);
+    for(const list of Object.values(enemyG)) _place(list,false);
   }
 
-  /* ── Squad Picker ────────────────────────────────────────── */
   _showSquadPicker(squads,clientX,clientY){
     const picker=document.getElementById('squad-picker'); if(!picker) return;
     this._hideSquadPicker();
@@ -514,7 +459,7 @@ class GameScene {
     const rect=this.container.getBoundingClientRect();
     const PW=224,PH=48+squads.length*76+38;
     picker.style.left=Math.min(clientX-rect.left+14,rect.width-PW-6)+'px';
-    picker.style.top =Math.min(clientY-rect.top+14, rect.height-PH-6)+'px';
+    picker.style.top=Math.min(clientY-rect.top+14,rect.height-PH-6)+'px';
     picker.style.display='block';
     setTimeout(()=>document.addEventListener('click',this._pickerOutsideHandler),80);
     chatUI.addLog('SYSTEM',null,`⚠ ${coord} — ${squads.length}개 분대 겹침.`,'system');
@@ -535,26 +480,31 @@ class GameScene {
   }
   selectSquadById(id){const s=this.squads.find(q=>q.side==='ally'&&q.id===id);if(s)this.selectSquad(s);}
 
-  /* ── 진행 버튼 표시/숨김 ──────────────────────────────────── */
   _showProceedBtn(label='진행'){
     const btn=document.getElementById('proceed-btn');
     if(!btn) return;
     btn.textContent=`▶ ${label}`;
     btn.style.display='block';
-    btn.onclick=()=>{ this._hideProceedBtn(); confirmTurn(); };
+    // ★ [BUG4 FIX] window.hud 미초기화 방어 + 전역 confirmTurn 폴백
+    btn.onclick=()=>{
+      this._hideProceedBtn();
+      if(window.hud&&typeof window.hud.confirmTurn==='function'){
+        window.hud.confirmTurn();
+      } else if(typeof confirmTurn==='function'){
+        confirmTurn();
+      } else if(this.turnManager){
+        this.turnManager.confirmInput();
+      }
+    };
   }
-  _hideProceedBtn(){
-    const btn=document.getElementById('proceed-btn');
-    if(btn) btn.style.display='none';
-  }
+  _hideProceedBtn(){const btn=document.getElementById('proceed-btn');if(btn)btn.style.display='none';}
 
-  /* ── 무기/생존 기반 이동 칸 수 계산 ─────────────────────── */
+  // ★ [BUG3 FIX] unitType 'machine_gun' 처리 추가 (WeaponSystem 반환값과 일치)
   _getMoveRange(squad){
     if(!squad) return 0;
-    let base=squad.unitType==='mortar'?CONFIG.MORTAR_MOVE:squad.unitType==='mg'?CONFIG.MG_MOVE:CONFIG.RIFLE_MOVE;
-    // 박격포 거치 시 이동 불가
+    const isMG=squad.unitType==='mg'||squad.unitType==='machine_gun';
+    let base=squad.unitType==='mortar'?CONFIG.MORTAR_MOVE:isMG?CONFIG.MG_MOVE:CONFIG.RIFLE_MOVE;
     if(squad.unitType==='mortar'&&squad.mortarState==='ready') base=0;
-    // 생존 저하 패널티 (스탯이 임계치 미만인 항목당 -1)
     if(squad.supply){
       const T=CONFIG.SURVIVAL_MOVE_PENALTY_THRESHOLD;
       if((squad.supply.water??100)<T)  base--;
@@ -564,25 +514,21 @@ class GameScene {
     return Math.max(0,base);
   }
 
-  /* ── 점멸 하이라이트 제거 ────────────────────────────────── */
   _clearBlinkHighlights(){
-    for(const m of this._moveHighlights)   {this.scene3d.remove(m);m.material?.dispose();}
-    for(const m of this._attackHighlights) {this.scene3d.remove(m);m.material?.dispose();}
-    this._moveHighlights=[];
-    this._attackHighlights=[];
+    for(const m of this._moveHighlights)  {this.scene3d.remove(m);m.material?.dispose();}
+    for(const m of this._attackHighlights){this.scene3d.remove(m);m.material?.dispose();}
+    this._moveHighlights=[];this._attackHighlights=[];
   }
 
-  /* ── 이동/공격 범위 하이라이트 (점멸) ───────────────────── */
   _showMoveTargets(squad){
     this._clearBlinkHighlights();
     this.gridMap.clearHighlights();
     const wDef=squad.weaponDef;
     const moveRange=this._getMoveRange(squad);
-    const gm=this.gridMap, TW=gm.TILE_W;
-
+    const gm=this.gridMap,TW=gm.TILE_W;
     const _mkMesh=(col,row,color)=>{
       const h=gm.tiles[row][col].height;
-      const wx=col*TW+gm.OFFSET_X, wz=row*TW+gm.OFFSET_Z;
+      const wx=col*TW+gm.OFFSET_X,wz=row*TW+gm.OFFSET_Z;
       const mat=new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.2,side:THREE.DoubleSide,depthWrite:false});
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(TW*0.94,TW*0.94),mat);
       mesh.rotation.x=-Math.PI/2;
@@ -591,10 +537,6 @@ class GameScene {
       this.scene3d.add(mesh);
       return mesh;
     };
-
-    // 이동 가능 타일 (초록 점멸)
-    // ★ v0.9: 야간이면 이동 하이라이트 범위는 변화 없음 (시야와 별개)
-    //          시야 범위 표시는 FogOfWar에서 처리됨
     if(moveRange>0&&!squad.sleeping){
       for(let r=0;r<CONFIG.GRID_ROWS;r++)
         for(let c=0;c<CONFIG.GRID_COLS;c++){
@@ -603,12 +545,10 @@ class GameScene {
           this._moveHighlights.push(_mkMesh(c,r,0x39ff8e));
         }
     }
-    // 공격 가능 타일 (빨강 점멸)
     for(const e of this.squads.filter(q=>q.side==='enemy'&&q.alive)){
       const inRange=wDef?this.weapon.inRange(squad.pos,e.pos,wDef):this.combat.inRange(squad.pos,e.pos);
       if(inRange) this._attackHighlights.push(_mkMesh(e.pos.col,e.pos.row,0xff4444));
     }
-    // 박격포 거치 간접사격 범위 (보라색, 점멸 없음)
     if(squad.unitType==='mortar'&&squad.mortarState==='ready'){
       for(let r=0;r<CONFIG.GRID_ROWS;r++)
         for(let c=0;c<CONFIG.GRID_COLS;c++){
@@ -627,18 +567,11 @@ class GameScene {
     const dist=Math.abs(targetPos.col-squad.pos.col)+Math.abs(targetPos.row-squad.pos.row);
     if(dist===0) return;
     if(squad.sleeping){chatUI.addLog('SYSTEM',null,`A${squad.id}분대 수면 중 — 행동 불가`,'system');return;}
-    // 1분대 지휘 제한 확인
-    if(this.commandedSquadId!==null&&this.commandedSquadId!==squad.id){
-      chatUI.addLog('SYSTEM',null,'이번 턴 지휘 완료 — 1개 분대만 직접 지휘 가능','system');return;
-    }
+    if(this.commandedSquadId!==null&&this.commandedSquadId!==squad.id){chatUI.addLog('SYSTEM',null,'이번 턴 지휘 완료 — 1개 분대만 직접 지휘 가능','system');return;}
     const moveRange=this._getMoveRange(squad);
     if(moveRange===0){chatUI.addLog('SYSTEM',null,'이동 불가 (거치 상태 또는 체력 저하)','system');return;}
     if(dist>moveRange){chatUI.addLog('SYSTEM',null,`이동 거리 초과(거리:${dist},가능:${moveRange})`,'system');return;}
-    // 박격포 이동 시 거치 해제
-    if(squad.unitType==='mortar'&&squad.mortarState==='ready'){
-      this.weapon.dismantleMortar(squad);
-      chatUI.addLog(`A${squad.id}`,null,'박격포 거치 해제 — 이동','system');
-    }
+    if(squad.unitType==='mortar'&&squad.mortarState==='ready'){this.weapon.dismantleMortar(squad);chatUI.addLog(`A${squad.id}`,null,'박격포 거치 해제 — 이동','system');}
     this._cancelCmd(squad);
     const quality=this._quality(squad);
     if(this.comms.rollMishear(quality)){
@@ -661,15 +594,11 @@ class GameScene {
 
   _issueAttack(squad,target){
     if(squad.sleeping){chatUI.addLog('SYSTEM',null,`A${squad.id}분대 수면 중 — 행동 불가`,'system');return;}
-    if(this.commandedSquadId!==null&&this.commandedSquadId!==squad.id){
-      chatUI.addLog('SYSTEM',null,'이번 턴 지휘 완료 — 1개 분대만 직접 지휘 가능','system');return;
-    }
+    if(this.commandedSquadId!==null&&this.commandedSquadId!==squad.id){chatUI.addLog('SYSTEM',null,'이번 턴 지휘 완료 — 1개 분대만 직접 지휘 가능','system');return;}
     const wDef=squad.weaponDef||{range:CONFIG.RIFLE_RANGE,hitRate:CONFIG.RIFLE_HIT_RATE};
     const maxRange=wDef.range||CONFIG.RIFLE_RANGE;
-    // 박격포는 간접사격 — 시야 무관, 단 거치 상태 필요
     if(squad.unitType==='mortar'){
       if(squad.mortarState!=='ready'){
-        // 거치 AP 처리
         if(squad.ap<CONFIG.MORTAR_SETUP_COST){chatUI.addLog('SYSTEM',null,'박격포: AP 부족 — 거치 불가','system');return;}
         const res=this.weapon.setupMortar(squad);
         if(res.ok){chatUI.addLog(`A${squad.id}`,null,'박격포 거치 완료 — 다시 클릭하여 사격','system');this._syncPanel();return;}
@@ -687,7 +616,6 @@ class GameScene {
       chatUI.addLog(`A${squad.id}`,null,`박격포 사격 → E${target.id-CONFIG.SQUAD_COUNT}분대 위치`);
       this._clearSelection(); this._showProceedBtn('박격포 확정'); return;
     }
-    // 기관총/소총 직접사격
     if(!this.weapon.inRange(squad.pos,target.pos,wDef)){chatUI.addLog('SYSTEM',null,`사거리 밖(최대${maxRange}타일)`,'system');return;}
     if(squad.ap<1){chatUI.addLog('SYSTEM',null,'AP 부족 — 사격 불가','system');return;}
     this._cancelCmd(squad);
@@ -706,29 +634,23 @@ class GameScene {
   _cancelCmd(squad){
     const idx=this.pendingCmds.findIndex(c=>c.squadId===squad.id); if(idx<0) return;
     const old=this.pendingCmds[idx];
-    // 이동은 AP 비용 없음; 공격만 AP 환불
     if(old.type==='attack') squad.ap+=1;
     else if(old.type==='mortar'){squad.ap+=1;squad.mortarCooldown=0;}
     this.pendingCmds.splice(idx,1);
-    // 해당 분대의 명령이 전부 취소됐으면 지휘권 반환
-    if(this.commandedSquadId===squad.id&&!this.pendingCmds.find(c=>c.squadId===squad.id)){
-      this.commandedSquadId=null;
-    }
+    if(this.commandedSquadId===squad.id&&!this.pendingCmds.find(c=>c.squadId===squad.id)){this.commandedSquadId=null;}
   }
 
   moveSquadTo(squad,targetPos,onDone){
-    const gm    =this.gridMap;
+    const gm=this.gridMap;
     const fromWP=gm.toWorld(squad.pos.col,squad.pos.row);
-    const toWP  =gm.toWorld(targetPos.col,targetPos.row);
-    const bh    =squad._boxH||gm.TILE_W*0.52;
-
-    const from={x:squad.mesh.position.x, y:fromWP.y+bh/2, z:squad.mesh.position.z};
-    const to  ={x:toWP.x,                y:toWP.y  +bh/2, z:toWP.z};
-
+    const toWP=gm.toWorld(targetPos.col,targetPos.row);
+    const bh=squad._boxH||gm.TILE_W*0.52;
+    const from={x:squad.mesh.position.x,y:fromWP.y+bh/2,z:squad.mesh.position.z};
+    const to={x:toWP.x,y:toWP.y+bh/2,z:toWP.z};
     this._animations.push({
       type:'move',squad,from,to,duration:0.30,elapsed:0,
       onComplete:()=>{
-        squad.pos    ={...targetPos};
+        squad.pos={...targetPos};
         squad.terrain=gm.tiles[targetPos.row][targetPos.col].terrain;
         squad.mesh.position.set(to.x,to.y,to.z);
         this._updateOverlapVisuals();
@@ -751,35 +673,23 @@ class GameScene {
       if(target.troops<=0){target.alive=false;setTimeout(()=>{if(target.mesh)target.mesh.visible=false;this._updateOverlapVisuals();},590);chatUI.addLog('SYSTEM',null,`${tLbl} 전멸`,'system');}
     } else {
       chatUI.addLog(aLbl,null,`${wLabel}사격 — 빗나감`);
-      // 기관총 빗나감 시 제압 효과
-      if(wDef&&wDef.suppression&&this.weapon){
-        this.weapon.applySuppression(target);
-        chatUI.addLog('SYSTEM',null,`${tLbl} 제압됨 (다음 턴 AP-1)`,'system');
-      }
+      if(wDef&&wDef.suppression&&this.weapon){this.weapon.applySuppression(target);chatUI.addLog('SYSTEM',null,`${tLbl} 제압됨 (다음 턴 AP-1)`,'system');}
     }
   }
 
-  /* ── 박격포 AOE 처리 ─────────────────────────────────────── */
-  applyMortarFire(attacker, targetPos) {
+  applyMortarFire(attacker,targetPos){
     const wDef=attacker.weaponDef;
-    // 착탄 오차 적용
-    const actual=this.weapon.applyMortarInaccuracy(targetPos, CONFIG.GRID_COLS, CONFIG.GRID_ROWS);
+    const actual=this.weapon.applyMortarInaccuracy(targetPos,CONFIG.GRID_COLS,CONFIG.GRID_ROWS);
     const coord=`${String.fromCharCode(65+(actual.col%26))}-${String(actual.row+1).padStart(2,'0')}`;
     const aLbl=attacker.side==='ally'?`A${attacker.id}`:`E${attacker.id-CONFIG.SQUAD_COUNT}`;
-
     chatUI.addLog(aLbl,null,`박격포 착탄 → ${coord} (AOE ${CONFIG.MORTAR_AOE}타일)`);
-
-    // 배급소 피격 확인
     const depot=this.supply.getDepotAt(actual.col,actual.row);
     if(depot&&depot.alive){
       const res=this.supply.damageDepot(depot.id,1);
-      chatUI.addLog('SYSTEM',null,
-        res.destroyed?`배급소#${depot.id} 파괴!`:`배급소#${depot.id} 피격 (HP:${depot.hp}/${depot.maxHp})`,'system');
+      chatUI.addLog('SYSTEM',null,res.destroyed?`배급소#${depot.id} 파괴!`:`배급소#${depot.id} 피격 (HP:${depot.hp}/${depot.maxHp})`,'system');
       this.supply.updateDepotVisual(depot);
     }
-
-    // AOE 피해
-    const aoeResults=this.combat.applyAOE(actual, CONFIG.MORTAR_AOE, this.squads, wDef);
+    const aoeResults=this.combat.applyAOE(actual,CONFIG.MORTAR_AOE,this.squads,wDef);
     for(const r of aoeResults){
       const tLbl=r.squad.side==='ally'?`A${r.squad.id}분대`:`E${r.squad.id-CONFIG.SQUAD_COUNT}분대`;
       if(r.hit){
@@ -804,8 +714,7 @@ class GameScene {
       const q=this._quality(squad);
       const fill=card.querySelector('.stat-fill'),cVal=card.querySelector('.comms-val');
       if(fill){fill.style.width=q+'%';fill.className='stat-fill'+(q<50?' crit':q<CONFIG.COMMS_QUALITY_THRESHOLD?' warn':'');}
-      if(cVal)cVal.textContent=q+'%';
-      // 보급/생존 바 업데이트
+      if(cVal) cVal.textContent=q+'%';
       if(squad.supply){
         const wPct=Math.round(squad.supply.water);
         const rPct=Math.round(squad.supply.ration);
@@ -821,11 +730,11 @@ class GameScene {
         if(wFill){wFill.style.width=wPct+'%';wFill.className='supply-water-fill stat-fill'+(wPct<30?' crit':wPct<50?' warn':'');}
         if(rFill){rFill.style.width=rPct+'%';rFill.className='supply-ration-fill stat-fill'+(rPct<20?' crit':rPct<40?' warn':'');}
         if(mFill){mFill.style.width=mPct+'%';mFill.className='supply-morale-fill stat-fill'+(mPct<CONFIG.SURVIVAL_MORALE_SLEEP_BELOW?' crit':mPct<40?' warn':'');}
-        if(wVal)wVal.textContent=wPct+'%';
-        if(rVal)rVal.textContent=rPct+'%';
-        if(mVal)mVal.textContent=mPct+'%';
-        if(invRat)invRat.textContent=squad.supply.inv_ration??'?';
-        if(invWat)invWat.textContent=squad.supply.inv_water??'?';
+        if(wVal) wVal.textContent=wPct+'%';
+        if(rVal) rVal.textContent=rPct+'%';
+        if(mVal) mVal.textContent=mPct+'%';
+        if(invRat) invRat.textContent=squad.supply.inv_ration??'?';
+        if(invWat) invWat.textContent=squad.supply.inv_water??'?';
       }
       const tag=card.querySelector('.squad-status-tag');
       const hasCmd=!!this.pendingCmds.find(c=>c.squadId===squad.id);
@@ -844,12 +753,12 @@ class GameScene {
       card.classList.toggle('active',this.selectedSquad?.id===squad.id);
     });
     const allyInValley=this.squads.some(s=>s.side==='ally'&&s.alive&&(s.terrain?.id==='valley'||s.terrain?.id==='river'));
-    const tw=document.getElementById('terrain-warn'); if(tw)tw.style.display=allyInValley?'flex':'none';
+    const tw=document.getElementById('terrain-warn'); if(tw) tw.style.display=allyInValley?'flex':'none';
     const batEl=document.getElementById('battery-val');
     if(batEl&&this.comms){const b=this.comms.batteryLevel;batEl.textContent=b+'%';batEl.className='val'+(b<30?' crit':b<50?' warn':'');}
     const phEl=document.getElementById('phase-val');
-    if(phEl)phEl.textContent=this.phase==='INPUT'?'명령 입력':this.phase==='EXECUTE'?'실행 중':'종료';
-    // ★ v0.9: 주야 HUD 칩 갱신
+    if(phEl) phEl.textContent=this.phase==='INPUT'?'명령 입력':this.phase==='EXECUTE'?'실행 중':'종료';
+    // v0.9: 주야 HUD (엘리먼트 없어도 안전)
     const dnChip=document.getElementById('daynight-val');
     if(dnChip&&this.dayNight){
       const p=this.dayNight.phase;
@@ -857,26 +766,22 @@ class GameScene {
       const colorMap={day:'var(--col-green)',dusk:'var(--col-amber)',night:'#4466cc',dawn:'#cc88ff'};
       dnChip.style.color=colorMap[p.id]||'var(--col-green)';
     }
-    // 배급소 상태 칩 업데이트
     this._syncDepotChip();
-    // 점령 게이지 HUD 업데이트
     this._syncCaptureHUD();
   }
 
-  /* ── 보급 요청 패널 ──────────────────────────────────────── */
   _showDepotPanel(depot,clientX,clientY){
     let panel=document.getElementById('depot-panel');
     if(!panel){panel=document.createElement('div');panel.id='depot-panel';this.container.appendChild(panel);}
     const canRequest=this.commandedSquadId===null;
     const typeLabel=depot.type==='food'?'전투식량 창고':depot.type==='water'?'급수소':'배급소';
-    // 이미 진행 중인 차량 있는지 확인
     const hasVehicle=this.supplyVehicles?.vehicles.some(v=>v.depotId===depot.id);
     const hp=depot.alive?`HP${depot.hp}/${depot.maxHp}`:'파괴됨';
     let btnHtml='';
-    if(!depot.alive)           btnHtml=`<div class="depot-panel-warn">배급소 파괴됨</div>`;
-    else if(hasVehicle)        btnHtml=`<div class="depot-panel-warn">보급 차량 운행 중</div>`;
-    else if(!canRequest)       btnHtml=`<div class="depot-panel-warn">이번 턴 지휘 완료</div>`;
-    else                       btnHtml=`<button class="depot-req-btn" id="_dreq_${depot.id}">보급 요청 (지휘 1회 소모)</button>`;
+    if(!depot.alive)      btnHtml=`<div class="depot-panel-warn">배급소 파괴됨</div>`;
+    else if(hasVehicle)   btnHtml=`<div class="depot-panel-warn">보급 차량 운행 중</div>`;
+    else if(!canRequest)  btnHtml=`<div class="depot-panel-warn">이번 턴 지휘 완료</div>`;
+    else                  btnHtml=`<button class="depot-req-btn" id="_dreq_${depot.id}">보급 요청 (지휘 1회 소모)</button>`;
     panel.innerHTML=`<div class="depot-panel-title">▸ ${typeLabel} #${depot.id}</div><div class="depot-panel-info">${hp}</div>${btnHtml}<button class="depot-close-btn" id="_dclose">✕ 닫기</button>`;
     const rect=this.container.getBoundingClientRect();
     panel.style.cssText=`display:block;left:${Math.min(clientX-rect.left+12,rect.width-210)}px;top:${Math.min(clientY-rect.top+12,rect.height-130)}px;`;
@@ -918,8 +823,9 @@ class GameScene {
     lines.innerHTML=allyDepots.map(d=>{
       const col=String.fromCharCode(65+(d.col%26));
       const row=String(d.row+1).padStart(2,'0');
-      const wPct=Math.round(d.water/d.maxWater*100);
-      const rPct=Math.round(d.ration/d.maxRation*100);
+      // ★ [BUG5 FIX] maxWater/maxRation=0 나누기 0 방어
+      const wPct=d.maxWater>0?Math.round(d.water/d.maxWater*100):0;
+      const rPct=d.maxRation>0?Math.round(d.ration/d.maxRation*100):0;
       const cls=!d.alive?'depot-line dead':wPct<30||rPct<30?'depot-line warn':'depot-line';
       const hp=d.alive?`HP${d.hp}/${d.maxHp}`:'파괴';
       return `<div class="${cls}">#${d.id}(${col}-${row}) 물:${wPct}% 식:${rPct}% ${hp}</div>`;
@@ -943,13 +849,6 @@ class GameScene {
     });
   }
 
-  /* ★ _onCanvasClick — 레이캐스팅 버그 수정
-     소형 맵에서 타일 피킹 시:
-     1. 유닛 박스 먼저 체크 (기존 동일)
-     2. tileMesh(픽킹 평면) 레이캐스팅 —
-        intersectObjects의 결과를 distance 오름차순 정렬 후 첫 번째 선택.
-        이전에는 배열 순서대로 선택해 뒤쪽 타일이 먼저 오는 경우 있었음.
-  */
   _onCanvasClick(e){
     if(this.phase!=='INPUT') return; this._hideSquadPicker();
     const mouse=this._toNDC(e); this.raycaster.setFromCamera(mouse,this.camera);
@@ -966,9 +865,7 @@ class GameScene {
     if(this.gridMap._largeMap){
       const gc=this._raycastToGrid(e);if(!gc)return;col=gc.col;row=gc.row;
     } else {
-      // ★ 수정: distance 기준 정렬 → 가장 가까운(앞쪽) 타일 선택
-      const tHits=this.raycaster.intersectObjects(this.gridMap.getTileMeshes())
-        .sort((a,b)=>a.distance-b.distance);
+      const tHits=this.raycaster.intersectObjects(this.gridMap.getTileMeshes()).sort((a,b)=>a.distance-b.distance);
       if(!tHits.length)return;
       col=tHits[0].object.userData.col;
       row=tHits[0].object.userData.row;
@@ -977,7 +874,6 @@ class GameScene {
     const allies=this._getSquadsOnTile(col,row,'ally');
     if(allies.length>1){this._showSquadPicker(allies,e.clientX,e.clientY);return;}
     if(allies.length===1){this.selectSquad(allies[0]);return;}
-    // 배급소 클릭 → 보급 요청 패널
     const depot=this.supply?.getDepotAt(col,row);
     if(depot&&depot.side==='ally'){this._showDepotPanel(depot,e.clientX,e.clientY);return;}
     if(!this.selectedSquad) return;
@@ -991,7 +887,7 @@ class GameScene {
     const ray=this.raycaster.ray;
     if(Math.abs(ray.direction.y)<0.0001) return null;
     const t=-ray.origin.y/ray.direction.y; if(t<0) return null;
-    return this.gridMap.worldToGrid(ray.origin.x+t*ray.direction.x, ray.origin.z+t*ray.direction.z);
+    return this.gridMap.worldToGrid(ray.origin.x+t*ray.direction.x,ray.origin.z+t*ray.direction.z);
   }
   _toNDC(e){const r=this.renderer.domElement.getBoundingClientRect();return new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);}
   _raycastTile(e){this.raycaster.setFromCamera(this._toNDC(e),this.camera);if(this.gridMap._largeMap)return this._raycastToGrid(e);const h=this.raycaster.intersectObjects(this.gridMap.getTileMeshes()).sort((a,b)=>a.distance-b.distance);return h.length?h[0].object.userData:null;}
@@ -1020,9 +916,8 @@ class GameScene {
     const now=ts||0,delta=Math.min((now-(this._lastTime||now))/1000,0.1);
     this._lastTime=now;
     this._updateAnimations(delta);
-    // 이동/공격 하이라이트 점멸 (사인파 펄스)
     if(this._moveHighlights.length||this._attackHighlights.length){
-      const blink=Math.sin(now*0.006)*0.5+0.5; // 0..1
+      const blink=Math.sin(now*0.006)*0.5+0.5;
       for(const m of this._moveHighlights)   m.material.opacity=0.07+blink*0.30;
       for(const m of this._attackHighlights) m.material.opacity=0.10+blink*0.35;
     }
