@@ -37,8 +37,46 @@ class TurnManager {
     hud.setStatus(`턴 ${this.turn} — 각 분대에 이동·사격 명령을 입력하십시오`);
 
     for (const s of this.scene.squads) {
-      if (s.alive) s.ap = CONFIG.SQUAD_AP_MAX;
+      if (!s.alive) continue;
+      // 제압 패널티 반영: suppressed 분대는 AP 1 감소
+      let ap = CONFIG.SQUAD_AP_MAX;
+      if (s.suppressed) { ap = Math.max(1, ap - 1); }
+      // 보급 부족 AP 패널티 반영
+      if (s._apPenalty) { ap = Math.max(0, ap - s._apPenalty); }
+      s.ap = ap;
     }
+
+    // 보급 tick (소모 → 배급소 보급 → 패널티 계산)
+    if (this.scene.supply) {
+      this.scene.supply.tick(this.scene.squads);
+
+      // 보급 경보 출력
+      const starved = this.scene.squads.filter(s =>
+        s.side === 'ally' && s.alive && s.supply &&
+        (s.supply.water < 30 || s.supply.ration < 20)
+      );
+      if (starved.length > 0) {
+        const ids = starved.map(s => `A${s.id}`).join(', ');
+        chatUI.addLog('SYSTEM', null, `⚠ ${ids} — 보급 부족! AP 패널티 적용됨`, 'system');
+      }
+
+      // 배급소 시각 업데이트
+      for (const d of this.scene.supply.depots) {
+        this.scene.supply.updateDepotVisual(d);
+      }
+
+      // 배급소 현황 로그 (5턴마다)
+      if (this.turn % 5 === 0) {
+        const status = this.scene.supply.getDepotStatusHTML();
+        if (status) chatUI.addLog('SYSTEM', null, status, 'system');
+      }
+    }
+
+    // 무기 쿨다운 감소
+    if (this.scene.weapon) {
+      this.scene.weapon.tickCooldowns(this.scene.squads.filter(s => s.alive));
+    }
+
     this.scene.comms.drainBattery();
     if (typeof this.scene._updateFog === 'function')            this.scene._updateFog();
     if (typeof this.scene._updateOverlapVisuals === 'function') this.scene._updateOverlapVisuals();
@@ -92,6 +130,12 @@ class TurnManager {
         if (target && target.alive) {
           this.scene.applyHit(squad, target);
           await this._wait(320);
+        }
+      } else if (cmd.type === 'mortar') {
+        // 박격포 간접사격 처리
+        if (typeof this.scene.applyMortarFire === 'function') {
+          this.scene.applyMortarFire(squad, cmd.targetPos);
+          await this._wait(500);
         }
       }
     }
