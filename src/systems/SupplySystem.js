@@ -203,7 +203,17 @@ class SupplySystem {
 
     // 바닥 패드
     const padGeo = new THREE.BoxGeometry(TW * 0.9, TW * 0.08, TW * 0.9);
-    const color  = depot.side === 'ally' ? 0x44aaff : 0xff6644;
+    // 타입별 색상·레이블
+    let color, labelText, labelColor;
+    if (depot.side !== 'ally') {
+      color = 0xff6644; labelText = 'ESUP'; labelColor = '#ff6644';
+    } else if (depot.type === 'food') {
+      color = 0xffb84d; labelText = '식량'; labelColor = '#ffb84d';
+    } else if (depot.type === 'water') {
+      color = 0x38d9f5; labelText = '급수'; labelColor = '#38d9f5';
+    } else {
+      color = 0x44aaff; labelText = 'SUP'; labelColor = '#44aaff';
+    }
     const padMat = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.85 });
     const pad    = new THREE.Mesh(padGeo, padMat);
     group.add(pad);
@@ -215,8 +225,7 @@ class SupplySystem {
     ));
 
     // 텍스트 스프라이트
-    const labelColor = depot.side === 'ally' ? '#44aaff' : '#ff6644';
-    const lbl = _makeTextSprite('SUP', labelColor);
+    const lbl = _makeTextSprite(labelText, labelColor);
     lbl.position.set(0, TW * 0.6, 0);
     lbl.scale.set(TW * 1.2, TW * 0.6, 1);
     lbl.raycast = () => {};
@@ -238,14 +247,20 @@ class SupplySystem {
    */
   updateDepotVisual(depot) {
     if (!depot.mesh || !depot._padMat) return;
-    const waterPct  = depot.water  / depot.maxWater;
-    const rationPct = depot.ration / depot.maxRation;
-    const avg       = (waterPct + rationPct) / 2;
+    if (!depot.alive) { depot._padMat.color.setHex(0x333333); return; }
+    // 타입별 잔량 비율
+    let pct = 1;
+    if (depot.type === 'food')  pct = depot.maxRation > 0 ? depot.ration / depot.maxRation : 1;
+    else if (depot.type === 'water') pct = depot.maxWater > 0 ? depot.water / depot.maxWater : 1;
+    else {
+      const wP = depot.maxWater  > 0 ? depot.water  / depot.maxWater  : 1;
+      const rP = depot.maxRation > 0 ? depot.ration / depot.maxRation : 1;
+      pct = (wP + rP) / 2;
+    }
     let col;
-    if (!depot.alive)       col = 0x333333;
-    else if (avg > 0.5)     col = 0x44aaff;
-    else if (avg > 0.2)     col = 0xffb84d;
-    else                    col = 0xff4444;
+    if      (pct > 0.5) col = depot.type === 'water' ? 0x38d9f5 : depot.type === 'food' ? 0xffb84d : 0x44aaff;
+    else if (pct > 0.2) col = 0xffb84d;
+    else                col = 0xff4444;
     depot._padMat.color.setHex(col);
   }
 
@@ -265,7 +280,8 @@ class SupplySystem {
         const rPct  = Math.round(d.ration / d.maxRation * 100);
         const hp    = d.alive ? `HP:${d.hp}/${d.maxHp}` : '파괴됨';
         const state = d.alive ? '' : ' ⚠';
-        return `배급소#${d.id}(${col}-${row})${state} 물:${wPct}% 식량:${rPct}% ${hp}`;
+        const typeName = d.type === 'food' ? '식량창고' : d.type === 'water' ? '급수소' : '배급소';
+        return `${typeName}#${d.id}(${col}-${row})${state} 물:${wPct}% 식량:${rPct}% ${hp}`;
       });
     return lines.join(' | ');
   }

@@ -392,6 +392,23 @@
     .btn.danger:hover { background:rgba(255,68,68,.08); }
     .footer-status { font-size:.8rem; color:var(--col-text-dim); letter-spacing:.08em; flex:1; text-align:center; }
 
+    /* ─── 진행 버튼 ─── */
+    #proceed-btn {
+      display: none; position: absolute;
+      bottom: 52px; left: 50%; transform: translateX(-50%);
+      z-index: 45; padding: 12px 42px;
+      background: rgba(57,255,142,.12); border: 2px solid var(--col-green);
+      color: var(--col-green); font-family: var(--font-mono); font-size: 1rem;
+      letter-spacing: .22em; cursor: pointer; text-transform: uppercase;
+      box-shadow: 0 0 18px rgba(57,255,142,.3);
+      animation: proceedPulse 1.4s ease-in-out infinite;
+    }
+    #proceed-btn:hover { background: rgba(57,255,142,.25); box-shadow: 0 0 32px rgba(57,255,142,.6); }
+    @keyframes proceedPulse {
+      0%,100% { box-shadow: 0 0 14px rgba(57,255,142,.28); }
+      50%      { box-shadow: 0 0 30px rgba(57,255,142,.65); }
+    }
+
     /* ─── DEPOT PANEL ─── */
     #depot-panel {
       display: none; position: absolute; z-index: 50;
@@ -535,6 +552,9 @@
         <button class="depot-close-btn" onclick="window._depotPanelClose?.()">닫기</button>
       </div>
 
+      <!-- 명령 확정 진행 버튼 -->
+      <button id="proceed-btn">▶ 진행</button>
+
     </div><!-- /game-canvas-container -->
   </div><!-- /main-layout -->
 
@@ -548,7 +568,6 @@
     <div class="footer-status" id="footer-status">대기 중 — 분대 명령 입력 후 CONFIRM</div>
     <div class="action-buttons">
       <button class="btn" onclick="holdAction()">HOLD</button>
-      <button class="btn primary" onclick="confirmTurn()">CONFIRM</button>
       <button class="btn danger" onclick="surrenderAction()">항복</button>
     </div>
   </footer>

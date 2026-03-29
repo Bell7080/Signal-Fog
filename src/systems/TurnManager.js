@@ -26,6 +26,7 @@ class TurnManager {
     this.scene.commandedSquadId = null;  // 지휘 제한 초기화
     this.scene.gridMap.clearHighlights();
     if (typeof this.scene._clearBlinkHighlights === 'function') this.scene._clearBlinkHighlights();
+    if (typeof this.scene._hideProceedBtn === 'function') this.scene._hideProceedBtn();
 
     if (typeof this.scene._hideSquadPicker === 'function') {
       this.scene._hideSquadPicker();
