@@ -107,6 +107,10 @@ class SupplySystem {
         const rationGive = Math.min(rationNeed, CONFIG.SUPPLY_RESUPPLY_RATION, depot.ration);
         s.supply.ration += rationGive;
         depot.ration    -= rationGive;
+
+        // 배급소 인근 정신력 회복 (SurvivalStats 연계)
+        const survival = window.gameScene?.survival;
+        if (survival) survival.recoverMoraleNearDepot(s);
       }
 
       // 배급소 재고 소진 시 파괴 처리
