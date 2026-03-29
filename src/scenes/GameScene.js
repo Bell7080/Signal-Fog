@@ -513,6 +513,19 @@ class GameScene {
   }
   selectSquadById(id){const s=this.squads.find(q=>q.side==='ally'&&q.id===id);if(s)this.selectSquad(s);}
 
+  /* ── 진행 버튼 표시/숨김 ──────────────────────────────────── */
+  _showProceedBtn(label='진행'){
+    const btn=document.getElementById('proceed-btn');
+    if(!btn) return;
+    btn.textContent=`▶ ${label}`;
+    btn.style.display='block';
+    btn.onclick=()=>{ this._hideProceedBtn(); confirmTurn(); };
+  }
+  _hideProceedBtn(){
+    const btn=document.getElementById('proceed-btn');
+    if(btn) btn.style.display='none';
+  }
+
   /* ── 무기/생존 기반 이동 칸 수 계산 ─────────────────────── */
   _getMoveRange(squad){
     if(!squad) return 0;
@@ -620,6 +633,7 @@ class GameScene {
     this._clearBlinkHighlights(); this.gridMap.clearHighlights(); this.gridMap.highlightTile(targetPos.col,targetPos.row,0x39ff8e,0.50);
     chatUI.addLog(`A${squad.id}`,null,`이동 → ${String.fromCharCode(65+(targetPos.col%26))}-${String(targetPos.row+1).padStart(2,'0')}`);
     this._clearSelection();
+    this._showProceedBtn('이동 확정');
   }
 
   _issueAttack(squad,target){
@@ -648,7 +662,7 @@ class GameScene {
       this._clearBlinkHighlights(); this.gridMap.clearHighlights();
       this.gridMap.highlightTile(target.pos.col,target.pos.row,0xcc80ff,0.55);
       chatUI.addLog(`A${squad.id}`,null,`박격포 사격 → E${target.id-CONFIG.SQUAD_COUNT}분대 위치`);
-      this._clearSelection(); return;
+      this._clearSelection(); this._showProceedBtn('박격포 확정'); return;
     }
     // 기관총/소총 직접사격
     if(!this.weapon.inRange(squad.pos,target.pos,wDef)){chatUI.addLog('SYSTEM',null,`사거리 밖(최대${maxRange}타일)`,'system');return;}
@@ -663,6 +677,7 @@ class GameScene {
     this._clearBlinkHighlights(); this.gridMap.clearHighlights(); this.gridMap.highlightTile(target.pos.col,target.pos.row,0xff4444,0.50);
     chatUI.addLog(`A${squad.id}`,null,`E${target.id-CONFIG.SQUAD_COUNT}분대 사격 명령`);
     this._clearSelection();
+    this._showProceedBtn('사격 확정');
   }
 
   _cancelCmd(squad){
@@ -846,6 +861,7 @@ class GameScene {
     this.commandedSquadId='supply_request';
     const label=type==='food'?'전투식량':type==='water'?'급수':'보급';
     chatUI.addLog('SYSTEM',null,`배급소#${depot.id} ${label} 차량 요청 — 다음 턴 출발`,'system');
+    this._showProceedBtn('보급 요청 확정');
   }
 
   _syncCaptureHUD(){

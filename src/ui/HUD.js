@@ -77,10 +77,10 @@ class HUD {
     chatUI.addLog('SYSTEM', null, '입력 시간 초과 → 자동 대기(HOLD) 처리', 'system');
   }
 
-  /** HOLD 버튼 */
+  /** HOLD 버튼 — 명령 없이 턴 진행 (AI 자율 행동) */
   holdAction() {
-    chatUI.addLog('SYSTEM', null, '행동 → HOLD (대기)', 'system');
-    this.setStatus('HOLD 선택됨 — 턴 종료 대기');
+    chatUI.addLog('SYSTEM', null, '명령 없이 턴 진행 — 분대 자율 행동', 'system');
+    this.confirmTurn();
   }
 
   /** CONFIRM 버튼 → TurnManager에 위임 */
