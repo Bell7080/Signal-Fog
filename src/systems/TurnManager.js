@@ -21,9 +21,11 @@ class TurnManager {
       if (prev.mat)  { prev.mat.emissive = new THREE.Color(0x000000); prev.mat.opacity = 0.90; }
       if (prev.mesh) { prev.mesh.scale.set(1, 1, 1); }
     }
-    this.scene.selectedSquad = null;
-    this.scene.pendingCmds   = [];
+    this.scene.selectedSquad  = null;
+    this.scene.pendingCmds    = [];
+    this.scene.commandedSquadId = null;  // 지휘 제한 초기화
     this.scene.gridMap.clearHighlights();
+    if (typeof this.scene._clearBlinkHighlights === 'function') this.scene._clearBlinkHighlights();
 
     if (typeof this.scene._hideSquadPicker === 'function') {
       this.scene._hideSquadPicker();
@@ -45,37 +47,23 @@ class TurnManager {
       if (s._apPenalty) { ap = Math.max(0, ap - s._apPenalty); }
       s.ap = ap;
 
-      // ── 이동AP 리셋 (무기 종류별 이동 가능 거리) ──
-      if (s.sleeping) {
-        s.moveAp = 0; // 수면 중 이동 불가
-      } else if (s.unitType === 'mortar') {
-        s.moveAp = s.mortarState === 'ready' ? 0 : 1; // 거치 시 이동 불가
-      } else if (s.unitType === 'mg') {
-        s.moveAp = Math.max(0, CONFIG.SQUAD_MOVE_AP - CONFIG.MG_MOVE_COST);
-      } else {
-        s.moveAp = CONFIG.SQUAD_MOVE_AP;
-      }
     }
 
-    // ── 생존 tick: 정신력/배고픔/물 자연 감소, 수면 처리, 아사 판정 ──
+    // ── 수면 처리 (아군 + 적군) ──
     if (this.scene.survival) {
-      const prev = this.scene.squads.filter(s => s.side === 'ally' && s.alive).map(s => ({
-        id: s.id, sleeping: s.sleeping, alive: s.alive,
-      }));
-      this.scene.survival.tick(this.scene.squads.filter(s => s.side === 'ally' && s.alive));
-      for (const s of this.scene.squads.filter(s => s.side === 'ally' && s.alive)) {
-        const p = prev.find(x => x.id === s.id);
-        if (!p) continue;
-        if (!p.sleeping && s.sleeping)
-          chatUI.addLog('SYSTEM', null, `A${s.id}분대 정신력 저하 — 수면(행동 불가)`, 'system');
-        if (p.sleeping && !s.sleeping)
-          chatUI.addLog('SYSTEM', null, `A${s.id}분대 수면 회복 — 행동 가능`, 'system');
+      const allAlive = this.scene.squads.filter(s => s.alive);
+      const sleepEvts = this.scene.survival.processSleep(allAlive);
+      for (const { squad: s, event } of sleepEvts) {
+        const lbl = s.side === 'ally' ? `A${s.id}분대` : `E${s.id - CONFIG.SQUAD_COUNT}분대`;
+        if (event === 'sleep') chatUI.addLog('SYSTEM', null, `${lbl} 정신력 저하 — 수면 돌입`, 'system');
+        if (event === 'wake')  chatUI.addLog('SYSTEM', null, `${lbl} 수면 회복 — 행동 가능`, 'system');
       }
-      // 아사 판정 (alive가 false로 바뀐 분대)
-      for (const p of prev) {
-        const s = this.scene.squads.find(x => x.id === p.id);
-        if (p.alive && s && !s.alive)
-          chatUI.addLog('SYSTEM', null, `A${s.id}분대 아사 — 전원 사망`, 'system');
+      // 아사 판정
+      const starveEvts = this.scene.survival.processStarvation(allAlive);
+      for (const { squad: s } of starveEvts) {
+        const lbl = s.side === 'ally' ? `A${s.id}분대` : `E${s.id - CONFIG.SQUAD_COUNT}분대`;
+        if (!s.alive) chatUI.addLog('SYSTEM', null, `${lbl} 아사 — 전원 사망`, 'system');
+        else          chatUI.addLog('SYSTEM', null, `${lbl} 아사 피해 — 병력 감소`, 'system');
       }
     }
 
@@ -110,6 +98,11 @@ class TurnManager {
       this.scene.weapon.tickCooldowns(this.scene.squads.filter(s => s.alive));
     }
 
+    // 보급 차량 tick
+    if (this.scene.supplyVehicles && this.scene.supply) {
+      this.scene.supplyVehicles.tick(this.scene.supply, msg => chatUI.addLog('SYSTEM', null, msg, 'system'));
+    }
+
     this.scene.comms.drainBattery();
     if (typeof this.scene._updateFog === 'function')            this.scene._updateFog();
     if (typeof this.scene._updateOverlapVisuals === 'function') this.scene._updateOverlapVisuals();
@@ -130,6 +123,23 @@ class TurnManager {
     document.getElementById('hud-phase').textContent = '실행';
     document.getElementById('phase-val').textContent = '실행 중';
     hud.setStatus('실행 페이즈 — 아군 행동 중...');
+
+    // ── AllyAI 자율 행동 주입 (플레이어가 지휘하지 않은 분대) ──
+    if (this.scene.allyAI) {
+      const allyAlive  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
+      const enemyAlive = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
+      const aiCmds = this.scene.allyAI.decide(
+        allyAlive, enemyAlive,
+        this.scene.objective,
+        this.scene.commandedSquadId
+      );
+      for (const cmd of aiCmds) {
+        // 이미 명령이 있는 분대는 건너뜀
+        if (!this.scene.pendingCmds.find(c => c.squadId === cmd.squadId)) {
+          this.scene.pendingCmds.push(cmd);
+        }
+      }
+    }
 
     await this._executeAlly();
     await this._wait(400);
@@ -156,8 +166,20 @@ class TurnManager {
       const squad = this.scene.squads.find(s => s.id === cmd.squadId);
       if (!squad || !squad.alive) continue;
 
-      if (cmd.type === 'move') {
+      if (cmd.type === 'rest') {
+        // 자율 자급자족: 인벤토리에서 먹기/마시기
+        if (this.scene.survival) {
+          const ok = this.scene.survival.autonomousRestore(squad, cmd.restType);
+          if (ok) {
+            const lbl = squad.side === 'ally' ? `A${squad.id}` : `E${squad.id - CONFIG.SQUAD_COUNT}`;
+            const act = cmd.restType === 'eat' ? '식사' : '음수';
+            chatUI.addLog(lbl, null, `자율 ${act} — 인벤토리 소모`, 'system');
+          }
+        }
+        await this._wait(60);
+      } else if (cmd.type === 'move') {
         await new Promise(resolve => this.scene.moveSquadTo(squad, cmd.targetPos, resolve));
+        if (this.scene.survival) this.scene.survival.consumeMove(squad);
         await this._wait(80);
       } else if (cmd.type === 'attack') {
         const target = this.scene.squads.find(s => s.id === cmd.targetId);
