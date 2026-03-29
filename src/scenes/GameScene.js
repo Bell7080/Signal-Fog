@@ -162,9 +162,11 @@ class GameScene {
 
     const worldSize=mapSize*tileW;
     this.scene3d.add(new THREE.AmbientLight(0x0a2010,1.5));
-    const pl=new THREE.PointLight(0x39ff8e,1.5,worldSize*4);
-    pl.position.set(0,camHeight*1.5,0); this.scene3d.add(pl);
-    const pl2=new THREE.PointLight(0x2277cc,0.5,worldSize*3);
+    this._ambientLight = new THREE.AmbientLight(0x0a2010, 1.5);
+    this.scene3d.add(this._ambientLight);
+    this._pointLight = new THREE.PointLight(0x39ff8e, 1.5, worldSize * 4);
+    this._pointLight.position.set(0, camHeight * 1.5, 0);
+  
     pl2.position.set(-worldSize*0.3,camHeight,worldSize*0.3); this.scene3d.add(pl2);
 
     this.raycaster=new THREE.Raycaster();
@@ -179,6 +181,9 @@ class GameScene {
     this.supply        =new SupplySystem();
     this.weapon        =new WeaponSystem();
     this.survival      =new SurvivalStats();
+    this.dayNight = CONFIG.DAY_NIGHT_ENABLED
+      ? new DayNightCycle()
+      : null;
     this.allyAI        =new AllyAI();
     this.supplyVehicles=new SupplyVehicleSystem();
     this.enemyAI       =new EnemyAI(new GeminiClient(),new FallbackAI());
@@ -194,6 +199,13 @@ class GameScene {
     this._initDepots();
     this._initFog();
     this._updateFog();
+    if (this.dayNight) {
+      this.dayNight.init({
+        ambient: this._ambientLight,
+        point: this._pointLight,
+        scene: this.scene3d,
+      });
+    }
   }
 
   /* ── 포그 초기화 ─────────────────────────────────────────── */
@@ -252,7 +264,7 @@ class GameScene {
   _updateFog() {
     if(!this.fog) return;
     const allies=this.squads.filter(s=>s.side==='ally'&&s.alive);
-    this.fog.computeVisible(allies);
+    this.fog.computeVisible(allies, this.dayNight);
     const gm=this.gridMap;
     if(this._fogMode==='canvas') {
       const ctx=this._fogCtx, RES=this._fogResRCP;
