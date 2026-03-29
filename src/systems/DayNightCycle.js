@@ -77,7 +77,7 @@ class DayNightCycle {
 
   /* ── 초기화: Three.js 조명 참조 주입 ─────────────────────── */
   /**
-   * @param {{ ambient: THREE.AmbientLight, point: THREE.PointLight }} lights
+   * @param {{ ambient: THREE.AmbientLight, point: THREE.PointLight, scene: THREE.Scene }} lights
    */
   init(lights) {
     this._lights = lights;
