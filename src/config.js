@@ -1,6 +1,7 @@
 /* ============================================================
    config.js — Signal-Fog 전역 설정값
-   v0.6: 높이 기반 시야 + 낮/밤 사이클 상수 추가
+   v0.6 FIX: MG_MOVE_COST / MORTAR_MOVE_COST 키 추가
+             (WeaponSystem.js의 WEAPON_TYPES 정의에서 참조)
    ============================================================ */
 
 var CONFIG = {
@@ -43,13 +44,11 @@ var CONFIG = {
   /* ── 포그 오브 워 ── */
   FOG_SIGHT_RANGE:  4,
 
-  /* ★ 높이 기반 시야 보정 (v0.6 신규) ── */
-  // heightNorm(0~1) 기준 임계치
-  FOG_HEIGHT_BONUS_THRESHOLD_LOW:  0.55,  // 중턱 이상 → 시야 +1
-  FOG_HEIGHT_BONUS_THRESHOLD_HIGH: 0.75,  // 고지 정상 → 시야 +2
+  /* ★ 높이 기반 시야 보정 ── */
+  FOG_HEIGHT_BONUS_THRESHOLD_LOW:  0.55,
+  FOG_HEIGHT_BONUS_THRESHOLD_HIGH: 0.75,
   FOG_HEIGHT_BONUS_LOW:   1,
   FOG_HEIGHT_BONUS_HIGH:  2,
-  // 능선 LOS 차단 여유값 (0에 가까울수록 엄격)
   FOG_LOS_TOLERANCE: 0.06,
 
   /* ── 턴 ── */
@@ -65,6 +64,10 @@ var CONFIG = {
   RIFLE_MOVE:  3,
   MG_MOVE:     2,
   MORTAR_MOVE: 1,
+
+  /* ★ FIX: WeaponSystem.js WEAPON_TYPES에서 참조하는 키 추가 ── */
+  MG_MOVE_COST:     0,   // 기관총 이동 AP 추가 패널티 (0 = 페널티 없음, MG_MOVE로 속도 제한)
+  MORTAR_MOVE_COST: 0,   // 박격포 이동 AP 추가 패널티 (거치 상태에서는 이동 0칸으로 제한)
 
   SURVIVAL_MOVE_PENALTY_THRESHOLD: 30,
 
@@ -122,8 +125,6 @@ var CONFIG = {
   MORTAR_SETUP_COST: 1,
   MORTAR_COOLDOWN:   2,
 
-  /* ★ 낮/밤 사이클 (v0.6 신규) ──────────────────────────── */
-  // 예선 MVP: 낮/밤 활성화 여부 (false면 항상 낮)
+  /* ★ 낮/밤 사이클 ── */
   DAY_NIGHT_ENABLED: true,
-  // 각 페이즈 길이는 DayNightCycle.PHASES에서 직접 관리
 };

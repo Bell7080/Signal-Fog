@@ -471,7 +471,7 @@
   <header id="header">
     <div class="header-title">
       <h1>SIGNAL-FOG</h1>
-      <span>KCTC 과학화전투 시뮬레이터 // v0.4</span>
+      <span>KCTC 과학화전투 시뮬레이터 // v0.5</span>
     </div>
     <div class="header-status">
       <span><span class="status-dot" id="dot-comms"></span> COMMS</span>
@@ -587,7 +587,8 @@
 
 <!-- ═══════════════════════════════════════════════════════════
      스크립트 로드 순서
-     ★ src/ui/APIKeyModal.js 제거 — src/ai/APIKeyModal.js만 사용
+     ★ src/ai/APIKeyModal.js 만 사용 (src/ui/APIKeyModal.js 제거)
+     ★ DayNightCycle.js 추가
      ═══════════════════════════════════════════════════════════ -->
 <script src="src/config.js"></script>
 <script src="src/ai/APIKeyModal.js"></script>
@@ -603,6 +604,7 @@
 <script src="src/systems/ObjectiveSystem.js"></script>
 <script src="src/systems/SupplySystem.js"></script>
 <script src="src/systems/WeaponSystem.js"></script>
+<script src="src/systems/DayNightCycle.js"></script>
 <script src="src/ai/GeminiClient.js"></script>
 <script src="src/ai/EnemyAI.js"></script>
 <script src="src/ai/FallbackAI.js"></script>
@@ -628,6 +630,7 @@
     '> 분대 편성 시스템 로드 완료',
     '> 보급 시스템 — 물 / 전투식량 / 배급소 초기화',
     '> 무기 체계 — 소총 / 기관총(MG) / 박격포(MT) 로드',
+    '> 낮/밤 사이클 시스템 로드 완료',
     '> 전술 시뮬레이터 시작',
   ];
 
