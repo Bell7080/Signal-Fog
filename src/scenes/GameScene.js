@@ -1,14 +1,13 @@
 /* ============================================================
-   GameScene.js v0.8
+   GameScene.js v0.9
    ────────────────────────────────────────────────────────────
-   변경:
-   1. _generateMap() → GridMap의 두 노이즈 레이어(_buildBaseField,
-      _buildRidgeField, _insertRivers)를 사용하도록 위임.
-      GameScene은 더 이상 직접 맵 레이아웃을 생성하지 않고
-      _generateMapLayout()을 통해 base/ridge 노이즈 기반 레이아웃만 반환.
-   2. 레이캐스터 camera.near = TILE_W * 0.05 → 근거리 오차 제거.
-   3. 소형 맵: _onCanvasClick에서 tileMesh 레이캐스팅 정렬 기준
-      → raycaster.params.Line.threshold 축소로 오검출 방지.
+   변경 (v0.8 → v0.9):
+   1. DayNightCycle 시스템 통합 (_initSystems, _initScene)
+   2. _initScene() — AmbientLight / PointLight 참조를 인스턴스 변수로 저장
+      (this._ambientLight, this._pointLight) → DayNightCycle에 주입 가능
+   3. _updateFog() — computeVisible(allies, this.dayNight) 인자 추가
+   4. _syncPanel() — 주야 HUD 칩 갱신 (daynight-val, phase-val)
+   5. _showMoveTargets() — 야간 시야 범위 주석 추가
    ============================================================ */
 
 const ALLY_COLOR_DEFS = [
@@ -96,6 +95,8 @@ class GameScene {
     this.turnManager=this.comms=this.combat=this.enemyAI=null;
     this.supply=null; this.weapon=null; this.survival=null; this.objective=null;
     this.allyAI=null; this.supplyVehicles=null;
+    // ★ v0.9: 낮/밤 사이클 참조
+    this.dayNight=null;
     this.commandedSquadId=null;   // 이번 턴 지휘한 분대 ID (1분대 제한)
     this._animations=[]; this._lastTime=null; this._mouseDownPos=null;
     this.fog=null; this._fogMeshes={}; this._ghostMeshes={}; this._overlapBadges={};
@@ -106,8 +107,8 @@ class GameScene {
 
   init() {
     this._initRenderer();
-    this._initScene();
-    this._initSystems();
+    this._initScene();    // ← 조명 객체 먼저 생성
+    this._initSystems();  // ← dayNight.init()에서 조명 참조 사용
     this._setupInput();
     window.addEventListener('resize',this._onResize.bind(this));
     window.gameScene=this;
@@ -161,13 +162,20 @@ class GameScene {
     } catch(e){console.warn('[GameScene] OrbitControls 없음:',e.message);}
 
     const worldSize=mapSize*tileW;
-    this.scene3d.add(new THREE.AmbientLight(0x0a2010,1.5));
+
+    // ★ v0.9: 조명을 인스턴스 변수로 저장 → DayNightCycle에서 제어 가능
+    // (기존: this.scene3d.add(new THREE.AmbientLight(...)) 익명 생성 → 참조 불가)
     this._ambientLight = new THREE.AmbientLight(0x0a2010, 1.5);
     this.scene3d.add(this._ambientLight);
+
     this._pointLight = new THREE.PointLight(0x39ff8e, 1.5, worldSize * 4);
     this._pointLight.position.set(0, camHeight * 1.5, 0);
-  
-    pl2.position.set(-worldSize*0.3,camHeight,worldSize*0.3); this.scene3d.add(pl2);
+    this.scene3d.add(this._pointLight);
+
+    // 보조 포인트 라이트 (참조 불필요 — dayNight 제어 대상 아님)
+    const pl2 = new THREE.PointLight(0x2277cc, 0.5, worldSize * 3);
+    pl2.position.set(-worldSize * 0.3, camHeight, worldSize * 0.3);
+    this.scene3d.add(pl2);
 
     this.raycaster=new THREE.Raycaster();
     // ★ 레이캐스터 정밀도 향상
@@ -181,9 +189,8 @@ class GameScene {
     this.supply        =new SupplySystem();
     this.weapon        =new WeaponSystem();
     this.survival      =new SurvivalStats();
-    this.dayNight = CONFIG.DAY_NIGHT_ENABLED
-      ? new DayNightCycle()
-      : null;
+    // ★ v0.9: 낮/밤 사이클 초기화
+    this.dayNight = CONFIG.DAY_NIGHT_ENABLED ? new DayNightCycle() : null;
     this.allyAI        =new AllyAI();
     this.supplyVehicles=new SupplyVehicleSystem();
     this.enemyAI       =new EnemyAI(new GeminiClient(),new FallbackAI());
@@ -199,11 +206,13 @@ class GameScene {
     this._initDepots();
     this._initFog();
     this._updateFog();
-    if (this.dayNight) {
+    // ★ v0.9: _initScene()에서 저장한 조명 참조를 DayNightCycle에 주입
+    // (_initScene이 _initSystems보다 먼저 실행되므로 조명 객체 보장)
+    if (this.dayNight && this._ambientLight && this._pointLight) {
       this.dayNight.init({
         ambient: this._ambientLight,
-        point: this._pointLight,
-        scene: this.scene3d,
+        point:   this._pointLight,
+        scene:   this.scene3d,
       });
     }
   }
@@ -264,6 +273,7 @@ class GameScene {
   _updateFog() {
     if(!this.fog) return;
     const allies=this.squads.filter(s=>s.side==='ally'&&s.alive);
+    // ★ v0.9: dayNight 인자 추가 → FogOfWar가 야간 시야 범위 보정 가능
     this.fog.computeVisible(allies, this.dayNight);
     const gm=this.gridMap;
     if(this._fogMode==='canvas') {
@@ -583,6 +593,8 @@ class GameScene {
     };
 
     // 이동 가능 타일 (초록 점멸)
+    // ★ v0.9: 야간이면 이동 하이라이트 범위는 변화 없음 (시야와 별개)
+    //          시야 범위 표시는 FogOfWar에서 처리됨
     if(moveRange>0&&!squad.sleeping){
       for(let r=0;r<CONFIG.GRID_ROWS;r++)
         for(let c=0;c<CONFIG.GRID_COLS;c++){
@@ -596,7 +608,6 @@ class GameScene {
       const inRange=wDef?this.weapon.inRange(squad.pos,e.pos,wDef):this.combat.inRange(squad.pos,e.pos);
       if(inRange) this._attackHighlights.push(_mkMesh(e.pos.col,e.pos.row,0xff4444));
     }
-    // 보급 차량도 공격 타겟으로 표시 (없으면 생략)
     // 박격포 거치 간접사격 범위 (보라색, 점멸 없음)
     if(squad.unitType==='mortar'&&squad.mortarState==='ready'){
       for(let r=0;r<CONFIG.GRID_ROWS;r++)
@@ -838,6 +849,14 @@ class GameScene {
     if(batEl&&this.comms){const b=this.comms.batteryLevel;batEl.textContent=b+'%';batEl.className='val'+(b<30?' crit':b<50?' warn':'');}
     const phEl=document.getElementById('phase-val');
     if(phEl)phEl.textContent=this.phase==='INPUT'?'명령 입력':this.phase==='EXECUTE'?'실행 중':'종료';
+    // ★ v0.9: 주야 HUD 칩 갱신
+    const dnChip=document.getElementById('daynight-val');
+    if(dnChip&&this.dayNight){
+      const p=this.dayNight.phase;
+      dnChip.textContent=p.label;
+      const colorMap={day:'var(--col-green)',dusk:'var(--col-amber)',night:'#4466cc',dawn:'#cc88ff'};
+      dnChip.style.color=colorMap[p.id]||'var(--col-green)';
+    }
     // 배급소 상태 칩 업데이트
     this._syncDepotChip();
     // 점령 게이지 HUD 업데이트
