@@ -234,6 +234,28 @@
     .stat-fill.crit { background:var(--col-red);   box-shadow:0 0 4px var(--col-red); }
     .comms-val { font-size:.68rem; color:var(--col-text-dim); width:32px; text-align:right; }
 
+    /* ─── 보급 바 ─── */
+    .supply-row { display:flex; align-items:center; gap:6px; margin-top:3px; }
+    .supply-label { font-size:.64rem; color:var(--col-text-dim); letter-spacing:.04em; width:26px; flex-shrink:0; }
+    .supply-val { font-size:.64rem; color:var(--col-text-dim); width:32px; text-align:right; }
+
+    /* ─── 무기 배지 ─── */
+    .weapon-badge {
+      font-size:.64rem; letter-spacing:.08em;
+      border:1px solid; padding:1px 5px;
+      margin-right:4px;
+    }
+
+    /* ─── 배급소 정보 칩 ─── */
+    #supply-chip {
+      background: rgba(8,12,10,.80); border: 1px solid #1e5070;
+      padding: 4px 12px; font-size:.75rem; letter-spacing:.08em; color:var(--col-text-dim);
+      display: flex; flex-direction:column; gap:2px;
+    }
+    #supply-chip .depot-line { color:#44aaff; }
+    #supply-chip .depot-line.warn { color:var(--col-amber); }
+    #supply-chip .depot-line.dead { color:var(--col-red); text-decoration:line-through; }
+
     /* ─── 배터리/지형 칩 (캔버스 좌측 상단 보조) ─── */
     #info-chips {
       position: absolute; left: 14px; top: 56px;
@@ -397,7 +419,7 @@
         <div class="hud-chip">PHASE <span class="val" id="hud-phase">준비</span></div>
       </div>
 
-      <!-- 배터리 / 페이즈 / 지형 칩 -->
+      <!-- 배터리 / 페이즈 / 지형 / 배급소 칩 -->
       <div id="info-chips">
         <div class="info-chip">
           배터리&nbsp;<span class="val warn" id="battery-val">100%</span>
@@ -407,6 +429,10 @@
         </div>
         <div class="info-chip" id="terrain-warn">
           ⚠ 통신 음영 구역
+        </div>
+        <div id="supply-chip" style="display:none;">
+          <span style="font-size:.64rem;color:#1e5070;letter-spacing:.1em;">▸ 배급소</span>
+          <div id="depot-status-lines"></div>
         </div>
       </div>
 
@@ -474,6 +500,8 @@
 <script src="src/systems/CombatSystem.js"></script>
 <script src="src/systems/FogOfWar.js"></script>
 <script src="src/systems/SurvivalStats.js"></script>
+<script src="src/systems/SupplySystem.js"></script>
+<script src="src/systems/WeaponSystem.js"></script>
 <script src="src/ai/GeminiClient.js"></script>
 <script src="src/ai/EnemyAI.js"></script>
 <script src="src/ai/FallbackAI.js"></script>
@@ -485,7 +513,7 @@
 <script>
   /* ── 부팅 시퀀스 ── */
   const BOOT_LINES = [
-    '> SIGNAL-FOG v0.4 초기화 중...',
+    '> SIGNAL-FOG v0.5 초기화 중...',
     '> Three.js 0.128.0 로드 완료',
     '> Howler.js 사운드 엔진 활성화',
     '> 전술 그리드 생성 중...',
@@ -495,6 +523,8 @@
     '> 통신 오류 시스템 (오청 3종) 초기화',
     '> 포그 오브 워 — 시야 반경 3타일',
     '> 분대 편성 시스템 로드 완료',
+    '> 보급 시스템 — 물 / 전투식량 / 배급소 초기화',
+    '> 무기 체계 — 소총 / 기관총(MG) / 박격포(MT) 로드',
     '> 전술 시뮬레이터 시작',
   ];
 
