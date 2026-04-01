@@ -1,10 +1,10 @@
 /* ============================================================
-   TurnManager.js v0.3
+   TurnManager.js v0.4
    ────────────────────────────────────────────────────────────
-   v0.3 변경:
-   · startInputPhase() 내 DayNightCycle.tick() 호출 추가
-   · 페이즈 전환 시 로그 출력 + 포그 재계산
-   · HUD daynight-val 갱신
+   v0.4 변경:
+   · [C] RadioInterceptSystem 연동: pickup 체크 + 도청 인터셉트
+   · startInputPhase() 내 radioIntercept.checkPickup / tick 호출
+   · _executeEnemy() 내 interceptActions 호출
    ============================================================ */
 
 class TurnManager {
@@ -52,10 +52,8 @@ class TurnManager {
       const { phaseChanged, log } = this.scene.dayNight.tick();
       if (phaseChanged && log) {
         chatUI.addLog('SYSTEM', null, log, 'system');
-        // 페이즈 전환 시 포그 재계산 (시야 반경 변경)
         if (typeof this.scene._updateFog === 'function') this.scene._updateFog();
       }
-      // HUD 주야 칩 갱신
       const dnVal = document.getElementById('daynight-val');
       if (dnVal) {
         const p = this.scene.dayNight.phase;
@@ -68,7 +66,6 @@ class TurnManager {
         };
         dnVal.style.color = colorMap[p.id] || 'var(--col-green)';
       }
-      // phase-val 칩에 시야 정보 표시
       const pvEl = document.getElementById('phase-val');
       if (pvEl) pvEl.textContent = this.scene.dayNight.getStatusText();
     }
@@ -118,6 +115,28 @@ class TurnManager {
     // 보급 차량 tick
     if (this.scene.supplyVehicles && this.scene.supply) {
       this.scene.supplyVehicles.tick(this.scene.supply, msg => chatUI.addLog('SYSTEM', null, msg, 'system'));
+    }
+
+    // ── [C] 무전기 도청 시스템 tick ──
+    if (this.scene.radioIntercept) {
+      const allyAlive = this.scene.squads.filter(s => s.side === 'ally' && s.alive);
+      this.scene.radioIntercept.checkPickup(allyAlive);
+      this.scene.radioIntercept.tick();
+
+      // 도청 상태 HUD 표시
+      if (this.scene.radioIntercept.isIntercepting) {
+        const el = document.getElementById('dot-comms');
+        if (el) {
+          el.style.background = '#ffcc00';
+          el.style.boxShadow  = '0 0 6px #ffcc00';
+        }
+      } else {
+        const el = document.getElementById('dot-comms');
+        if (el) {
+          el.style.background = '';
+          el.style.boxShadow  = '';
+        }
+      }
     }
 
     this.scene.comms.drainBattery();
@@ -227,6 +246,11 @@ class TurnManager {
 
     console.log(`[TurnManager] 적군 액션 ${actions.length}개:`, actions);
     chatUI.addLog('SYSTEM', null, `적군 행동 ${actions.length}개 수신`, 'system');
+
+    // ── [C-3] 도청 인터셉트 — 적 행동 노출 ──
+    if (this.scene.radioIntercept?.isIntercepting) {
+      this.scene.radioIntercept.interceptActions(actions, enemySquads);
+    }
 
     for (const action of actions) {
       const squad = this.scene.squads.find(s => s.side === 'enemy' && s.id === action.squadId && s.alive);

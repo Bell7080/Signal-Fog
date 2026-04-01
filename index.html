@@ -14,7 +14,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
 
   <style>
-    /* ── CSS 변수 ── */
     :root {
       --col-bg:       #080c0a;
       --col-surface:  #0d1410;
@@ -41,13 +40,11 @@
       cursor: crosshair;
     }
 
-    /* 스캔라인 */
     body::before {
       content: ''; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
       background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.18) 2px,rgba(0,0,0,.18) 4px);
     }
 
-    /* 격자 배경 */
     body::after {
       content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
       background-image: linear-gradient(var(--col-grid) 1px,transparent 1px),
@@ -63,7 +60,6 @@
       display: flex; flex-direction: column;
     }
 
-    /* ─── HEADER ─── */
     #header {
       display: flex; align-items: center; justify-content: space-between;
       padding: 10px 28px;
@@ -91,7 +87,6 @@
     .status-dot.red   { background:var(--col-red);   box-shadow:0 0 6px var(--col-red); }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-    /* ─── MAIN LAYOUT — 캔버스 단독 ─── */
     #main-layout {
       flex: 1;
       display: flex;
@@ -99,7 +94,6 @@
       min-height: 0;
     }
 
-    /* ─── CENTER — Three.js 캔버스 (전체 영역) ─── */
     #game-canvas-container {
       flex: 1;
       position: relative;
@@ -109,7 +103,6 @@
       min-height: 0;
     }
 
-    /* 부팅 화면 */
     #boot-screen {
       position: absolute; inset: 0; z-index: 10; background: #040604;
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
@@ -128,7 +121,6 @@
     .boot-bar-wrap { width:480px; height:3px; background:var(--col-border); }
     #boot-bar { height:100%; width:0%; background:var(--col-green); box-shadow:0 0 8px var(--col-green); transition:width .4s ease; }
 
-    /* Three.js 캔버스 */
     #game-canvas-container canvas {
       display: block !important;
       position: absolute !important;
@@ -136,7 +128,6 @@
       width: 100% !important; height: 100% !important;
     }
 
-    /* ─── HUD 오버레이 (캔버스 위) ─── */
     #hud-overlay {
       position: absolute; top: 14px; left: 14px; right: 14px;
       display: flex; justify-content: space-between;
@@ -148,7 +139,6 @@
     }
     .hud-chip .val { color:var(--col-green); }
 
-    /* ─── 인게임 통신 로그 (캔버스 우측 하단 오버레이) ─── */
     #comms-overlay {
       position: absolute;
       right: 14px; bottom: 14px;
@@ -187,7 +177,6 @@
     }
     #chat-send:hover { color:var(--col-green); background:rgba(57,255,142,.06); }
 
-    /* ─── 분대 상태 오버레이 (캔버스 좌측 하단) ─── */
     #squad-overlay {
       position: absolute;
       left: 14px; bottom: 14px;
@@ -234,32 +223,26 @@
     .stat-fill.crit { background:var(--col-red);   box-shadow:0 0 4px var(--col-red); }
     .comms-val { font-size:.68rem; color:var(--col-text-dim); width:32px; text-align:right; }
 
-    /* ─── 보급 바 ─── */
     .supply-row { display:flex; align-items:center; gap:6px; margin-top:3px; }
     .supply-label { font-size:.64rem; color:var(--col-text-dim); letter-spacing:.04em; width:26px; flex-shrink:0; }
     .supply-val { font-size:.64rem; color:var(--col-text-dim); width:32px; text-align:right; }
 
-    /* ─── 정신력 바 ─── */
     .supply-morale-fill { height:100%; background:#7ec8e3; transition:width .6s ease; box-shadow:0 0 4px #7ec8e3; }
     .supply-morale-fill.warn { background:var(--col-amber); box-shadow:0 0 4px var(--col-amber); }
     .supply-morale-fill.crit { background:var(--col-red);   box-shadow:0 0 4px var(--col-red); }
 
-    /* ─── 인벤토리 행 ─── */
     .inventory-row { display:flex; gap:8px; margin-top:3px; font-size:.62rem; color:var(--col-text-dim); letter-spacing:.04em; }
     .inv-ration { color:#c8a46e; }
     .inv-water  { color:#7ec8e3; }
 
-    /* ─── 수면 상태 배지 ─── */
     .sleeping-tag { font-size:.66rem; color:#aaa; background:rgba(0,0,0,.5); border:1px solid #555; padding:1px 5px; letter-spacing:.06em; }
 
-    /* ─── 무기 배지 ─── */
     .weapon-badge {
       font-size:.64rem; letter-spacing:.08em;
       border:1px solid; padding:1px 5px;
       margin-right:4px;
     }
 
-    /* ─── 배급소 정보 칩 ─── */
     #supply-chip {
       background: rgba(8,12,10,.80); border: 1px solid #1e5070;
       padding: 4px 12px; font-size:.75rem; letter-spacing:.08em; color:var(--col-text-dim);
@@ -269,7 +252,6 @@
     #supply-chip .depot-line.warn { color:var(--col-amber); }
     #supply-chip .depot-line.dead { color:var(--col-red); text-decoration:line-through; }
 
-    /* ─── 점령지 게이지 칩 ─── */
     #capture-chip {
       background: rgba(8,12,10,.80); border: 1px solid #b87a00;
       padding: 4px 12px; font-size:.75rem; letter-spacing:.08em; color:var(--col-text-dim);
@@ -286,7 +268,6 @@
     }
     .capture-chip-pct { color:#ffcc44; min-width: 32px; text-align:right; }
 
-    /* ─── 배터리/지형 칩 (캔버스 좌측 상단 보조) ─── */
     #info-chips {
       position: absolute; left: 14px; top: 56px;
       display: flex; flex-direction: column; gap: 5px;
@@ -306,7 +287,6 @@
       color:var(--col-red); font-size:.72rem; letter-spacing:.08em; padding:4px 10px;
     }
 
-    /* Squad Picker */
     #squad-picker {
       display: none;
       position: absolute;
@@ -345,7 +325,6 @@
     .picker-close { display: flex; align-items: center; justify-content: center; padding: 8px; font-size: .7rem; letter-spacing: .1em; color: var(--col-text-dim); cursor: pointer; border-top: 1px solid var(--col-border); transition: color .15s, background .15s; }
     .picker-close:hover { color: var(--col-red); background: rgba(255,68,68,.06); }
 
-    /* 로그 엔트리 */
     .log-entry { margin-bottom:7px; font-size:.78rem; line-height:1.55; animation:fadeSlide .25s ease forwards; opacity:0; }
     @keyframes fadeSlide { from{opacity:0;transform:translateX(6px)} to{opacity:1;transform:translateX(0)} }
     .log-time { color:var(--col-text-dim); margin-right:4px; }
@@ -365,7 +344,6 @@
       95%,100%{clip-path:inset(30% 0 50% 0);transform:translateX(0)}
     }
 
-    /* ─── FOOTER ─── */
     #footer {
       display:flex; align-items:center; justify-content:space-between;
       padding:10px 28px; border-top:1px solid var(--col-border);
@@ -392,7 +370,6 @@
     .btn.danger:hover { background:rgba(255,68,68,.08); }
     .footer-status { font-size:.8rem; color:var(--col-text-dim); letter-spacing:.08em; flex:1; text-align:center; }
 
-    /* ─── 진행 버튼 ─── */
     #proceed-btn {
       display: none; position: absolute;
       bottom: 52px; left: 50%; transform: translateX(-50%);
@@ -409,7 +386,6 @@
       50%      { box-shadow: 0 0 30px rgba(57,255,142,.65); }
     }
 
-    /* ─── DEPOT PANEL ─── */
     #depot-panel {
       display: none; position: absolute; z-index: 50;
       background: rgba(8,12,10,.96); border: 1px solid var(--col-amber);
@@ -444,7 +420,6 @@
     }
     .depot-close-btn:hover { border-color: var(--col-text-dim); }
 
-    /* ─── RESULT OVERLAY ─── */
     #result-overlay {
       display:none; position:absolute; inset:0; z-index:100;
       background:rgba(4,6,4,.88); align-items:center; justify-content:center;
@@ -467,7 +442,6 @@
 <body>
 <div id="app-wrapper">
 
-  <!-- ── HEADER ── -->
   <header id="header">
     <div class="header-title">
       <h1>SIGNAL-FOG</h1>
@@ -480,13 +454,9 @@
     </div>
   </header>
 
-  <!-- ── MAIN LAYOUT ── -->
   <div id="main-layout">
-
-    <!-- ── CENTER (Three.js) — 전체 영역 ── -->
     <div id="game-canvas-container">
 
-      <!-- 부팅 화면 -->
       <div id="boot-screen">
         <div class="boot-logo">SIGNAL<br>FOG</div>
         <div class="boot-sub"><span>육군창업경진대회 2026 // 팀 LNG</span></div>
@@ -494,14 +464,12 @@
         <div class="boot-bar-wrap"><div id="boot-bar"></div></div>
       </div>
 
-      <!-- HUD 상단 -->
       <div id="hud-overlay">
         <div class="hud-chip">TURN <span class="val" id="hud-turn">01</span></div>
         <div class="hud-chip">GRID <span class="val" id="hud-coord">--</span></div>
         <div class="hud-chip">PHASE <span class="val" id="hud-phase">준비</span></div>
       </div>
 
-      <!-- 배터리 / 페이즈 / 지형 / 배급소 칩 -->
       <div id="info-chips">
         <div class="info-chip">
           배터리&nbsp;<span class="val warn" id="battery-val">100%</span>
@@ -525,12 +493,10 @@
         </div>
       </div>
 
-      <!-- 분대 상태 오버레이 (좌하단) -->
       <div id="squad-overlay">
         <div id="squad-list"></div>
       </div>
 
-      <!-- 통신 로그 오버레이 (우하단) -->
       <div id="comms-overlay">
         <div id="comms-overlay-title">▸ 통신 채널 // 지휘</div>
         <div id="chat-log"></div>
@@ -540,10 +506,8 @@
         </div>
       </div>
 
-      <!-- Squad Picker -->
       <div id="squad-picker"></div>
 
-      <!-- 배급소 보급 요청 패널 -->
       <div id="depot-panel">
         <div class="depot-panel-title" id="depot-panel-title">배급소</div>
         <div class="depot-panel-info" id="depot-panel-info"></div>
@@ -552,13 +516,11 @@
         <button class="depot-close-btn" onclick="window._depotPanelClose?.()">닫기</button>
       </div>
 
-      <!-- 명령 확정 진행 버튼 -->
       <button id="proceed-btn">▶ 진행</button>
 
-    </div><!-- /game-canvas-container -->
-  </div><!-- /main-layout -->
+    </div>
+  </div>
 
-  <!-- ── FOOTER ── -->
   <footer id="footer">
     <div class="turn-timer-wrap">
       <div class="turn-label">TURN INPUT</div>
@@ -572,7 +534,6 @@
     </div>
   </footer>
 
-  <!-- ── 결과 오버레이 ── -->
   <div id="result-overlay">
     <div id="result-panel">
       <div id="result-reason">훈련 종료</div>
@@ -583,12 +544,14 @@
     </div>
   </div>
 
-</div><!-- /app-wrapper -->
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════
      스크립트 로드 순서
-     ★ src/ai/APIKeyModal.js 만 사용 (src/ui/APIKeyModal.js 제거)
-     ★ DayNightCycle.js 추가
+     ★ 4개 신규 파일 추가:
+       src/systems/RadioInterceptSystem.js
+       src/systems/BulletSystem.js
+       src/systems/ChatCommandParser.js
      ═══════════════════════════════════════════════════════════ -->
 <script src="src/config.js"></script>
 <script src="src/ai/APIKeyModal.js"></script>
@@ -605,6 +568,12 @@
 <script src="src/systems/SupplySystem.js"></script>
 <script src="src/systems/WeaponSystem.js"></script>
 <script src="src/systems/DayNightCycle.js"></script>
+<!-- ★ 신규: 무전기 도청 시스템 -->
+<script src="src/systems/RadioInterceptSystem.js"></script>
+<!-- ★ 신규: 총알 이펙트 시스템 -->
+<script src="src/systems/BulletSystem.js"></script>
+<!-- ★ 신규: 채팅 명령 파서 -->
+<script src="src/systems/ChatCommandParser.js"></script>
 <script src="src/ai/GeminiClient.js"></script>
 <script src="src/ai/EnemyAI.js"></script>
 <script src="src/ai/FallbackAI.js"></script>
@@ -616,7 +585,6 @@
 <script src="src/main.js"></script>
 
 <script>
-  /* ── 부팅 시퀀스 ── */
   const BOOT_LINES = [
     '> SIGNAL-FOG v0.5 초기화 중...',
     '> Three.js 0.128.0 로드 완료',
@@ -631,6 +599,9 @@
     '> 보급 시스템 — 물 / 전투식량 / 배급소 초기화',
     '> 무기 체계 — 소총 / 기관총(MG) / 박격포(MT) 로드',
     '> 낮/밤 사이클 시스템 로드 완료',
+    '> 무전기 도청 시스템 로드 완료',
+    '> 총알 이펙트 시스템 로드 완료',
+    '> 채팅 명령 파서 로드 완료',
     '> 전술 시뮬레이터 시작',
   ];
 
@@ -661,14 +632,12 @@
     setTimeout(bootStep, 220 + Math.random() * 180);
   }
 
-  /* ── 로드 완료 시 APIKeyModal 표시 ── */
   window.addEventListener('load', () => {
     requestAnimationFrame(() => {
       APIKeyModal.show(() => setTimeout(bootStep, 300));
     });
   });
 
-  /* ── 시계 ── */
   function updateClock() {
     const n = new Date();
     document.getElementById('clock').textContent =
@@ -678,7 +647,6 @@
   }
   updateClock(); setInterval(updateClock, 1000);
 
-  /* ── 분대 선택 (squad-overlay 내 카드 클릭) ── */
   function selectSquad(card, squadId) {
     if (window.gameScene && typeof window.gameScene.selectSquadById === 'function') {
       window.gameScene.selectSquadById(squadId);
