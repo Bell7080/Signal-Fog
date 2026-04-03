@@ -235,8 +235,6 @@
     .inv-ration { color:#c8a46e; }
     .inv-water  { color:#7ec8e3; }
 
-    .sleeping-tag { font-size:.66rem; color:#aaa; background:rgba(0,0,0,.5); border:1px solid #555; padding:1px 5px; letter-spacing:.06em; }
-
     .weapon-badge {
       font-size:.64rem; letter-spacing:.08em;
       border:1px solid; padding:1px 5px;
@@ -286,6 +284,11 @@
       background: rgba(40,4,4,.82); border-color:var(--col-red);
       color:var(--col-red); font-size:.72rem; letter-spacing:.08em; padding:4px 10px;
     }
+
+    /* ── 낮/밤 칩 ── */
+    #daynight-chip { gap: 5px; }
+    #daynight-icon { font-size: 1rem; line-height: 1; }
+    #daynight-val  { transition: color .6s; }
 
     #squad-picker {
       display: none;
@@ -420,22 +423,59 @@
     }
     .depot-close-btn:hover { border-color: var(--col-text-dim); }
 
+    /* ── AAR 결과 오버레이 ── */
     #result-overlay {
       display:none; position:absolute; inset:0; z-index:100;
       background:rgba(4,6,4,.88); align-items:center; justify-content:center;
+      overflow-y: auto;
     }
     #result-overlay.show { display:flex; }
+
     #result-panel {
-      border:1px solid var(--col-green); box-shadow:0 0 40px rgba(57,255,142,.18),inset 0 0 20px rgba(57,255,142,.04);
-      background:rgba(8,12,10,.98); padding:40px 60px; text-align:center; min-width:360px;
+      border: 1px solid var(--col-green);
+      box-shadow: 0 0 40px rgba(57,255,142,.18), inset 0 0 20px rgba(57,255,142,.04);
+      background: rgba(8,12,10,.98);
+      padding: 30px 40px;
+      text-align: left;
+      min-width: 360px;
+      max-width: 700px;
+      width: 90vw;
+      max-height: 85vh;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--col-border) transparent;
+      margin: auto;
     }
-    #result-reason { font-size:.82rem; letter-spacing:.18em; color:var(--col-text-dim); margin-bottom:12px; }
-    #result-title { font-size:2.4rem; letter-spacing:.22em; color:var(--col-green); text-shadow:0 0 24px rgba(57,255,142,.6); margin-bottom:22px; }
+
+    #result-reason {
+      font-size:.82rem; letter-spacing:.18em; color:var(--col-text-dim);
+      margin-bottom:12px; text-align:center;
+    }
+    #result-title {
+      font-size:2.4rem; letter-spacing:.22em; color:var(--col-green);
+      text-shadow:0 0 24px rgba(57,255,142,.6); margin-bottom:22px; text-align:center;
+    }
     #result-title.lose { color:var(--col-red); text-shadow:0 0 24px rgba(255,68,68,.6); }
-    .result-sep { width:100%; height:1px; background:var(--col-border); margin:0 0 22px; }
-    #result-body { font-size:.84rem; color:var(--col-text-dim); line-height:2.6; margin-bottom:30px; text-align:left; }
-    #result-body .rv { color:var(--col-green); float:right; }
-    #result-body .rv.red { color:var(--col-red); }
+    .result-sep { width:100%; height:1px; background:var(--col-border); margin:0 0 18px; }
+
+    #result-body {
+      font-size: .78rem;
+      color: var(--col-text-dim);
+      line-height: 2.0;
+      margin-bottom: 24px;
+      text-align: left;
+    }
+    #result-body .rv     { color: var(--col-green); float: right; }
+    #result-body .rv.red { color: var(--col-red); }
+
+    /* AAR 결과 버튼 */
+    #result-overlay .btn.primary {
+      display: block;
+      width: 100%;
+      margin-top: 8px;
+      padding: 12px;
+      text-align: center;
+    }
   </style>
 </head>
 
@@ -476,6 +516,11 @@
         </div>
         <div class="info-chip">
           페이즈&nbsp;<span class="val" id="phase-val">준비 중</span>
+        </div>
+        <!-- ★ 낮/밤 사이클 HUD 칩 -->
+        <div class="info-chip" id="daynight-chip">
+          <span id="daynight-icon">🌅</span>
+          <span class="val" id="daynight-val" style="color:var(--col-green);">낮</span>
         </div>
         <div class="info-chip" id="terrain-warn">
           ⚠ 통신 음영 구역
@@ -534,6 +579,7 @@
     </div>
   </footer>
 
+  <!-- ★ AAR 결과 오버레이 -->
   <div id="result-overlay">
     <div id="result-panel">
       <div id="result-reason">훈련 종료</div>
@@ -548,10 +594,7 @@
 
 <!-- ═══════════════════════════════════════════════════════════
      스크립트 로드 순서
-     ★ 4개 신규 파일 추가:
-       src/systems/RadioInterceptSystem.js
-       src/systems/BulletSystem.js
-       src/systems/ChatCommandParser.js
+     ★ AARSystem.js 추가
      ═══════════════════════════════════════════════════════════ -->
 <script src="src/config.js"></script>
 <script src="src/ai/APIKeyModal.js"></script>
@@ -568,12 +611,11 @@
 <script src="src/systems/SupplySystem.js"></script>
 <script src="src/systems/WeaponSystem.js"></script>
 <script src="src/systems/DayNightCycle.js"></script>
-<!-- ★ 신규: 무전기 도청 시스템 -->
 <script src="src/systems/RadioInterceptSystem.js"></script>
-<!-- ★ 신규: 총알 이펙트 시스템 -->
 <script src="src/systems/BulletSystem.js"></script>
-<!-- ★ 신규: 채팅 명령 파서 -->
 <script src="src/systems/ChatCommandParser.js"></script>
+<!-- ★ AAR 시스템 -->
+<script src="src/systems/AARSystem.js"></script>
 <script src="src/ai/GeminiClient.js"></script>
 <script src="src/ai/EnemyAI.js"></script>
 <script src="src/ai/FallbackAI.js"></script>
@@ -602,6 +644,7 @@
     '> 무전기 도청 시스템 로드 완료',
     '> 총알 이펙트 시스템 로드 완료',
     '> 채팅 명령 파서 로드 완료',
+    '> AAR 전투 결과 분석 시스템 로드 완료',
     '> 전술 시뮬레이터 시작',
   ];
 

@@ -1,10 +1,10 @@
 /* ============================================================
-   TurnManager.js v0.4
+   TurnManager.js v0.5
    ────────────────────────────────────────────────────────────
-   v0.4 변경:
-   · [C] RadioInterceptSystem 연동: pickup 체크 + 도청 인터셉트
-   · startInputPhase() 내 radioIntercept.checkPickup / tick 호출
-   · _executeEnemy() 내 interceptActions 호출
+   v0.5 변경:
+   · [E] AARSystem 연동: 턴 시작/통신 품질/배급소 피해/결과 표시
+   · [F] daynight-val HUD 엘리먼트 연동 (누락 수정)
+   · RadioInterceptSystem 연동 유지
    ============================================================ */
 
 class TurnManager {
@@ -47,27 +47,52 @@ class TurnManager {
       s.ap = ap;
     }
 
-    // ★ 낮/밤 사이클 tick
+    // ── [E] AAR 턴 시작 기록 ──
+    if (this.scene.aar) {
+      this.scene.aar.onTurnStart(this.turn, this.scene.dayNight);
+    }
+
+    // ── [F] 낮/밤 사이클 tick ──
     if (this.scene.dayNight && CONFIG.DAY_NIGHT_ENABLED) {
       const { phaseChanged, log } = this.scene.dayNight.tick();
       if (phaseChanged && log) {
         chatUI.addLog('SYSTEM', null, log, 'system');
         if (typeof this.scene._updateFog === 'function') this.scene._updateFog();
       }
-      const dnVal = document.getElementById('daynight-val');
-      if (dnVal) {
+
+      // ── [F] daynight-val HUD 갱신 ──
+      const dnVal  = document.getElementById('daynight-val');
+      const dnIcon = document.getElementById('daynight-icon');
+      if (dnVal || dnIcon) {
         const p = this.scene.dayNight.phase;
-        dnVal.textContent = p.label;
         const colorMap = {
           day:   'var(--col-green)',
           dusk:  'var(--col-amber)',
           night: '#4466cc',
           dawn:  '#cc88ff',
         };
-        dnVal.style.color = colorMap[p.id] || 'var(--col-green)';
+        const iconMap = { day: '🌅', dusk: '🌆', night: '🌙', dawn: '🌄' };
+        if (dnVal) {
+          dnVal.textContent = p.label;
+          dnVal.style.color = colorMap[p.id] || 'var(--col-green)';
+        }
+        if (dnIcon) dnIcon.textContent = iconMap[p.id] || '🌅';
       }
+
+      // phase-val에 낮밤 정보 포함
       const pvEl = document.getElementById('phase-val');
       if (pvEl) pvEl.textContent = this.scene.dayNight.getStatusText();
+    }
+
+    // ── [E] AAR 통신 품질 기록 ──
+    if (this.scene.aar) {
+      const allyAlive = this.scene.squads.filter(s => s.side === 'ally' && s.alive);
+      if (allyAlive.length > 0) {
+        const avgQ = Math.round(
+          allyAlive.reduce((sum, s) => sum + this.scene._quality(s), 0) / allyAlive.length
+        );
+        this.scene.aar.recordCommsQuality(avgQ);
+      }
     }
 
     // 수면 처리
@@ -117,22 +142,18 @@ class TurnManager {
       this.scene.supplyVehicles.tick(this.scene.supply, msg => chatUI.addLog('SYSTEM', null, msg, 'system'));
     }
 
-    // ── [C] 무전기 도청 시스템 tick ──
+    // ── 무전기 도청 시스템 tick ──
     if (this.scene.radioIntercept) {
       const allyAlive = this.scene.squads.filter(s => s.side === 'ally' && s.alive);
       this.scene.radioIntercept.checkPickup(allyAlive);
       this.scene.radioIntercept.tick();
 
-      // 도청 상태 HUD 표시
-      if (this.scene.radioIntercept.isIntercepting) {
-        const el = document.getElementById('dot-comms');
-        if (el) {
+      const el = document.getElementById('dot-comms');
+      if (el) {
+        if (this.scene.radioIntercept.isIntercepting) {
           el.style.background = '#ffcc00';
           el.style.boxShadow  = '0 0 6px #ffcc00';
-        }
-      } else {
-        const el = document.getElementById('dot-comms');
-        if (el) {
+        } else {
           el.style.background = '';
           el.style.boxShadow  = '';
         }
@@ -194,6 +215,7 @@ class TurnManager {
     for (const cmd of cmds) {
       const squad = this.scene.squads.find(s => s.id === cmd.squadId);
       if (!squad || !squad.alive) continue;
+
       if (cmd.type === 'rest') {
         if (this.scene.survival) {
           const ok = this.scene.survival.autonomousRestore(squad, cmd.restType);
@@ -247,7 +269,7 @@ class TurnManager {
     console.log(`[TurnManager] 적군 액션 ${actions.length}개:`, actions);
     chatUI.addLog('SYSTEM', null, `적군 행동 ${actions.length}개 수신`, 'system');
 
-    // ── [C-3] 도청 인터셉트 — 적 행동 노출 ──
+    // 도청 인터셉트
     if (this.scene.radioIntercept?.isIntercepting) {
       this.scene.radioIntercept.interceptActions(actions, enemySquads);
     }
@@ -319,25 +341,33 @@ class TurnManager {
     this._nextTurn();
   }
 
-  /* ── 결과 오버레이 ── */
+  /* ── [E] 결과 오버레이 — AAR 통합 ── */
   _showResult(win, data) {
     hud.stopTimer();
     this.scene.phase = 'RESULT';
     document.getElementById('hud-phase').textContent = '종료';
     hud.setStatus(win ? '훈련 완료 — 승리' : '훈련 종료 — 패배');
     chatUI.addLog('SYSTEM', null, win ? `훈련 완료 — 승리 (${data.reason})` : `훈련 종료 — 패배 (${data.reason})`, 'system');
+
     const overlay = document.getElementById('result-overlay');
     if (!overlay) return;
-    document.getElementById('result-reason').textContent = `종료 사유 // ${data.reason}`;
-    const title = document.getElementById('result-title');
-    title.textContent = win ? '승리' : '패배';
-    title.className   = win ? '' : 'lose';
-    const enemyClass = data.enemyAlive > 0 ? ' red' : '';
-    document.getElementById('result-body').innerHTML =
-      `소요 턴<span class="rv">${data.turns} / ${CONFIG.TURN_LIMIT}</span><br>` +
-      `아군 잔존<span class="rv">${data.allyAlive} / ${data.allyTotal}</span><br>` +
-      `적군 잔존<span class="rv${enemyClass}">${data.enemyAlive} / ${data.enemyTotal}</span>`;
-    overlay.classList.add('show');
+
+    // ── [E] AAR 통합 결과 화면 ──
+    if (this.scene.aar) {
+      this.scene.aar.show({ win, ...data }, this.scene.squads);
+    } else {
+      // 폴백: 기존 간단 표시
+      document.getElementById('result-reason').textContent = `종료 사유 // ${data.reason}`;
+      const title = document.getElementById('result-title');
+      title.textContent = win ? '승리' : '패배';
+      title.className   = win ? '' : 'lose';
+      const enemyClass = data.enemyAlive > 0 ? ' red' : '';
+      document.getElementById('result-body').innerHTML =
+        `소요 턴<span class="rv">${data.turns} / ${CONFIG.TURN_LIMIT}</span><br>` +
+        `아군 잔존<span class="rv">${data.allyAlive} / ${data.allyTotal}</span><br>` +
+        `적군 잔존<span class="rv${enemyClass}">${data.enemyAlive} / ${data.enemyTotal}</span>`;
+      overlay.classList.add('show');
+    }
   }
 
   _nextTurn() { this.turn++; this.startInputPhase(); }

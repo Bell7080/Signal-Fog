@@ -1,11 +1,12 @@
 /* ============================================================
-   GameScene.js v0.9.2 — 4기능 통합 패치
+   GameScene.js v0.9.3 — AAR + 낮밤 HUD 완전 통합
    ────────────────────────────────────────────────────────────
-   [A] 게임 시작 시 아군 중앙 카메라 포커스
+   [A]  게임 시작 시 아군 중앙 카메라 포커스
    [A2] 분대 선택 시 해당 분대로 카메라 이동
-   [B] 사격 시 총알 이펙트 (BulletSystem)
-   [C] 적 처치 시 50% 무전기 드롭 + 도청 시스템
-   [D] ChatCommandParser 연동
+   [B]  사격 시 총알 이펙트 (BulletSystem)
+   [C]  적 처치 시 50% 무전기 드롭 + 도청 시스템
+   [D]  ChatCommandParser 연동
+   [E]  AARSystem 연동 (사격·피해·격파·이동·오청·배급소)
    ============================================================ */
 
 const ALLY_COLOR_DEFS = [
@@ -82,13 +83,10 @@ class GameScene {
     this.supply=null; this.weapon=null; this.survival=null; this.objective=null;
     this.allyAI=null; this.supplyVehicles=null;
     this.dayNight=null;
-    // [A] 카메라 트윈
+    this.aar=null;
     this._camTweenFn=null; this._camTweenCancel=null;
-    // [B] 총알 시스템
     this.bullet=null;
-    // [C] 무전기 도청
     this.radioIntercept=null;
-    // [D] 채팅 명령 파서
     this.chatParser=null;
     this._ambientLight=null; this._pointLight=null;
     this.commandedSquadId=null;
@@ -112,12 +110,10 @@ class GameScene {
     chatUI.addLog('SYSTEM',null,`점령 게이지: ${this.objective.maxGauge}pt 필요 (${CONFIG.CAPTURE_WIN_TURNS_FACTOR}pt/분대/턴)`,'system');
     chatUI.addLog('SYSTEM',null,'드래그=회전 / 휠=줌 / 우클릭드래그=이동','system');
     chatUI.addLog('SYSTEM',null,'채팅: "N분대 전진/후퇴/공격" 또는 "전 아군 전진" 명령 가능','system');
-    // ── [A] 시작 시 아군 중앙 카메라 포커스 ──
     setTimeout(() => this._focusOnAllyCenter(), 900);
     this._tick();
   }
 
-  // ── [A] 아군 중앙으로 카메라 포커스 ──
   _focusOnAllyCenter() {
     const allies = this.squads.filter(s => s.side === 'ally' && s.alive);
     if (allies.length === 0 || !this.controls) return;
@@ -130,7 +126,6 @@ class GameScene {
     chatUI.addLog('SYSTEM',null,'[카메라] 아군 중앙 시점 고정','system');
   }
 
-  // ── [A] 분대 좌표로 카메라 이동 ──
   _focusOnSquad(squad) {
     if (!squad || !this.controls) return;
     const gm = this.gridMap;
@@ -139,21 +134,17 @@ class GameScene {
     this._animateCamera(wx, 0, wz);
   }
 
-  // ── [A] 부드러운 카메라 이동 ──
   _animateCamera(tx, ty, tz) {
     if (!this.controls) return;
     const startTarget = this.controls.target.clone();
     const endTarget   = new THREE.Vector3(tx, ty ?? startTarget.y, tz);
     if (startTarget.distanceTo(endTarget) < 0.05) return;
-
     if (this._camTweenCancel) this._camTweenCancel();
     let cancelled = false;
     this._camTweenCancel = () => { cancelled = true; };
-
     const duration = 0.5;
     let elapsed = 0;
     const ease = t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
-
     this._camTweenFn = (delta) => {
       if (cancelled) { this._camTweenFn = null; return; }
       elapsed += delta;
@@ -179,19 +170,15 @@ class GameScene {
     const w=this.container.clientWidth||window.innerWidth||800;
     const h=this.container.clientHeight||window.innerHeight||600;
     this.scene3d=new THREE.Scene();
-
     const WORLD=24;
     const tileW=WORLD/Math.max(CONFIG.GRID_COLS,CONFIG.GRID_ROWS);
     const {camDist,camHeight,fov}=_calcCameraParams(tileW,CONFIG.GRID_COLS,CONFIG.GRID_ROWS);
-
     const mapSize=Math.max(CONFIG.GRID_COLS,CONFIG.GRID_ROWS);
     const fogDensity=mapSize<=20?0.015:mapSize<=60?0.008:0.004;
     this.scene3d.fog=new THREE.FogExp2(0x040604,fogDensity);
-
     this.camera=new THREE.PerspectiveCamera(fov,w/h,tileW*0.05,camDist*6);
     this.camera.position.set(0,camHeight,camDist);
     this.camera.lookAt(0,0,0);
-
     this.controls=null;
     try {
       if(typeof THREE.OrbitControls!=='undefined'){
@@ -202,7 +189,6 @@ class GameScene {
         });
       }
     } catch(e){console.warn('[GameScene] OrbitControls 없음:',e.message);}
-
     const worldSize=mapSize*tileW;
     this._ambientLight=new THREE.AmbientLight(0x0a2010,1.5);
     this.scene3d.add(this._ambientLight);
@@ -212,7 +198,6 @@ class GameScene {
     const pl2=new THREE.PointLight(0x2277cc,0.5,worldSize*3);
     pl2.position.set(-worldSize*0.3,camHeight,worldSize*0.3);
     this.scene3d.add(pl2);
-
     this.raycaster=new THREE.Raycaster();
     this.raycaster.params.Line={threshold:0.01};
   }
@@ -243,13 +228,12 @@ class GameScene {
     if(this.dayNight&&this._ambientLight&&this._pointLight){
       this.dayNight.init({ambient:this._ambientLight,point:this._pointLight,scene:this.scene3d});
     }
-    // ── [B] 총알 시스템 ──
     this.bullet = new BulletSystem(this.scene3d, this.gridMap);
-    // ── [C] 무전기 도청 시스템 ──
     this.radioIntercept = new RadioInterceptSystem();
     this.radioIntercept.init(this.scene3d, this.gridMap);
-    // ── [D] 채팅 명령 파서 ──
     this.chatParser = new ChatCommandParser(this);
+    // [E] AAR 시스템 초기화
+    this.aar = new AARSystem();
   }
 
   _initFog() {
@@ -528,7 +512,6 @@ class GameScene {
     const cd=squad._colDef||this._squadColor(squad);
     squad.mat.emissive=new THREE.Color(cd.emissive); squad.mat.opacity=1.0; squad.mesh.scale.set(1.25,1.25,1.25);
     this._showMoveTargets(squad); this._syncPanel();
-    // ── [A2] 분대 선택 시 카메라 이동 ──
     this._focusOnSquad(squad);
     const pos=`${String.fromCharCode(65+(squad.pos.col%26))}-${String(squad.pos.row+1).padStart(2,'0')}`;
     const cmdInfo=this.commandedSquadId===null?'지휘 가능':this.commandedSquadId===squad.id?'지휘 중':'이번 턴 지휘 완료';
@@ -543,13 +526,9 @@ class GameScene {
     btn.style.display='block';
     btn.onclick=()=>{
       this._hideProceedBtn();
-      if(window.hud&&typeof window.hud.confirmTurn==='function'){
-        window.hud.confirmTurn();
-      } else if(typeof confirmTurn==='function'){
-        confirmTurn();
-      } else if(this.turnManager){
-        this.turnManager.confirmInput();
-      }
+      if(window.hud&&typeof window.hud.confirmTurn==='function'){window.hud.confirmTurn();}
+      else if(typeof confirmTurn==='function'){confirmTurn();}
+      else if(this.turnManager){this.turnManager.confirmInput();}
     };
   }
   _hideProceedBtn(){const btn=document.getElementById('proceed-btn');if(btn)btn.style.display='none';}
@@ -632,15 +611,42 @@ class GameScene {
       const res=this.comms.applyMishear({type:'move',squadId:squad.id,targetTile:targetPos,targetPos},this.squads,squad);
       if(res.distorted){
         chatUI.showMishear(res.originalText,res.distortedText,res.mishearType);
+        // [E] AAR 오청 기록
+        if(this.aar) this.aar.onMishear(squad.id, res.mishearType);
         if(res.mishearType==='ignore'){chatUI.addLog(`A${squad.id}`,null,'⚡ 명령 미수신 — 대기','system');this._clearSelection();return;}
-        if(res.mishearType==='attack_instead'){const target=this.squads.find(s=>s.id===res.command.targetId&&s.alive);if(target&&squad.ap>=1){this.pendingCmds.push({type:'attack',squadId:squad.id,targetId:target.id});squad.ap-=1;this.commandedSquadId=squad.id;chatUI.addLog(`A${squad.id}`,null,`⚡ 오청 → E${target.id-CONFIG.SQUAD_COUNT}분대 사격으로 둔갑`);}else{chatUI.addLog(`A${squad.id}`,null,'⚡ 오청(사격 둔갑) — AP 부족','system');}this._clearSelection();return;}
-        if(res.mishearType==='coord'){const dp=res.command.targetTile,dd=Math.abs(dp.col-squad.pos.col)+Math.abs(dp.row-squad.pos.row);if(dd>0&&dd<=moveRange){this.pendingCmds.push({type:'move',squadId:squad.id,targetPos:dp});this.commandedSquadId=squad.id;this._clearBlinkHighlights();this.gridMap.highlightTile(dp.col,dp.row,0xffb84d,0.50);chatUI.addLog(`A${squad.id}`,null,`⚡ 오청 이동 → ${String.fromCharCode(65+(dp.col%26))}-${String(dp.row+1).padStart(2,'0')}`);}else{chatUI.addLog(`A${squad.id}`,null,'⚡ 오청 좌표 이동 불가 → 대기','system');}this._clearSelection();return;}
+        if(res.mishearType==='attack_instead'){
+          const target=this.squads.find(s=>s.id===res.command.targetId&&s.alive);
+          if(target&&squad.ap>=1){
+            this.pendingCmds.push({type:'attack',squadId:squad.id,targetId:target.id});
+            squad.ap-=1;this.commandedSquadId=squad.id;
+            chatUI.addLog(`A${squad.id}`,null,`⚡ 오청 → E${target.id-CONFIG.SQUAD_COUNT}분대 사격으로 둔갑`);
+          } else {
+            chatUI.addLog(`A${squad.id}`,null,'⚡ 오청(사격 둔갑) — AP 부족','system');
+          }
+          this._clearSelection();return;
+        }
+        if(res.mishearType==='coord'){
+          const dp=res.command.targetTile,dd=Math.abs(dp.col-squad.pos.col)+Math.abs(dp.row-squad.pos.row);
+          if(dd>0&&dd<=moveRange){
+            this.pendingCmds.push({type:'move',squadId:squad.id,targetPos:dp});
+            this.commandedSquadId=squad.id;
+            this._clearBlinkHighlights();
+            this.gridMap.highlightTile(dp.col,dp.row,0xffb84d,0.50);
+            chatUI.addLog(`A${squad.id}`,null,`⚡ 오청 이동 → ${String.fromCharCode(65+(dp.col%26))}-${String(dp.row+1).padStart(2,'0')}`);
+          } else {
+            chatUI.addLog(`A${squad.id}`,null,'⚡ 오청 좌표 이동 불가 → 대기','system');
+          }
+          this._clearSelection();return;
+        }
       }
     }
     this.pendingCmds.push({type:'move',squadId:squad.id,targetPos});
     this.commandedSquadId=squad.id;
     if(this.survival) this.survival.consumeMove(squad);
-    this._clearBlinkHighlights(); this.gridMap.clearHighlights(); this.gridMap.highlightTile(targetPos.col,targetPos.row,0x39ff8e,0.50);
+    // [E] AAR 이동 기록
+    if(this.aar) this.aar.onMove(squad.id);
+    this._clearBlinkHighlights(); this.gridMap.clearHighlights();
+    this.gridMap.highlightTile(targetPos.col,targetPos.row,0x39ff8e,0.50);
     chatUI.addLog(`A${squad.id}`,null,`이동 → ${String.fromCharCode(65+(targetPos.col%26))}-${String(targetPos.row+1).padStart(2,'0')}`);
     this._clearSelection();
     this._showProceedBtn('이동 확정');
@@ -674,12 +680,21 @@ class GameScene {
     if(squad.ap<1){chatUI.addLog('SYSTEM',null,'AP 부족 — 사격 불가','system');return;}
     this._cancelCmd(squad);
     const quality=this._quality(squad);
-    if(this.comms.rollMishear(quality)){const res=this.comms.applyMishear({type:'attack',squadId:squad.id,targetId:target.id},this.squads,squad);if(res.distorted&&res.mishearType==='ignore'){chatUI.showMishear(res.originalText,res.distortedText,res.mishearType);chatUI.addLog(`A${squad.id}`,null,'⚡ 사격 명령 미수신 — 대기','system');this._clearSelection();return;}if(res.distorted)chatUI.showMishear(res.originalText,res.distortedText,res.mishearType);}
+    if(this.comms.rollMishear(quality)){
+      const res=this.comms.applyMishear({type:'attack',squadId:squad.id,targetId:target.id},this.squads,squad);
+      if(res.distorted){
+        chatUI.showMishear(res.originalText,res.distortedText,res.mishearType);
+        // [E] AAR 오청 기록
+        if(this.aar) this.aar.onMishear(squad.id, res.mishearType);
+        if(res.mishearType==='ignore'){chatUI.addLog(`A${squad.id}`,null,'⚡ 사격 명령 미수신 — 대기','system');this._clearSelection();return;}
+      }
+    }
     this.pendingCmds.push({type:'attack',squadId:squad.id,targetId:target.id});
     squad.ap-=1;
     this.commandedSquadId=squad.id;
     if(this.survival) this.survival.consumeAttack(squad);
-    this._clearBlinkHighlights(); this.gridMap.clearHighlights(); this.gridMap.highlightTile(target.pos.col,target.pos.row,0xff4444,0.50);
+    this._clearBlinkHighlights(); this.gridMap.clearHighlights();
+    this.gridMap.highlightTile(target.pos.col,target.pos.row,0xff4444,0.50);
     chatUI.addLog(`A${squad.id}`,null,`E${target.id-CONFIG.SQUAD_COUNT}분대 사격 명령`);
     this._clearSelection();
     this._showProceedBtn('사격 확정');
@@ -713,7 +728,7 @@ class GameScene {
     });
   }
 
-  // ── [B][C] applyHit — 총알 이펙트 + 무전기 드롭 통합 ──
+  // ── [B][C][E] applyHit ──
   applyHit(attacker,target){
     const terrain=this.gridMap.tiles[target.pos.row][target.pos.col].terrain;
     const wDef=attacker.weaponDef||null;
@@ -722,21 +737,23 @@ class GameScene {
     const tLbl=target.side==='ally'?`A${target.id}분대`:`E${target.id-CONFIG.SQUAD_COUNT}분대`;
     const wLabel=wDef&&wDef.id!=='rifle'?`[${wDef.labelShort}] `:'';
 
-    // ── [B] 총알 이펙트 ──
-    if(this.bullet){
-      this.bullet.fire(attacker.pos, target.pos, attacker.unitType||'rifle', hit);
-    }
+    if(this.bullet) this.bullet.fire(attacker.pos,target.pos,attacker.unitType||'rifle',hit);
+
+    // [E] AAR 사격 기록
+    if(this.aar) this.aar.onShot(attacker.side,attacker.id,hit);
 
     if(hit){
       target.troops=Math.max(0,target.troops-1);
+      // [E] AAR 피해 기록
+      if(this.aar) this.aar.onCasualty(target.side);
       chatUI.addLog(aLbl,null,`${wLabel}${tLbl} 명중! (잔여:${target.troops}명)`);
       if(target.mat){let n=0;const flash=()=>{if(!target.mat)return;target.mat.opacity=n++%2===0?0.15:0.90;if(n<6)setTimeout(flash,90);else target.mat.opacity=0.90;};flash();}
       if(target.troops<=0){
         target.alive=false;
-        // ── [C] 적 처치 시 무전기 드롭 ──
-        if(target.side==='enemy' && this.radioIntercept){
-          this.radioIntercept.tryDrop(target);
-        }
+        // [E] AAR 격파 기록
+        if(this.aar) this.aar.onSquadKilled(target.side);
+        // [C] 무전기 드롭
+        if(target.side==='enemy'&&this.radioIntercept) this.radioIntercept.tryDrop(target);
         setTimeout(()=>{if(target.mesh)target.mesh.visible=false;this._updateOverlapVisuals();},590);
         chatUI.addLog('SYSTEM',null,`${tLbl} 전멸`,'system');
       }
@@ -746,22 +763,20 @@ class GameScene {
     }
   }
 
-  // ── [B] applyMortarFire — 총알 이펙트 추가 ──
+  // ── [B][E] applyMortarFire ──
   applyMortarFire(attacker,targetPos){
     const wDef=attacker.weaponDef;
     const actual=this.weapon.applyMortarInaccuracy(targetPos,CONFIG.GRID_COLS,CONFIG.GRID_ROWS);
-    const coord=`${String.fromCharCode(65+(actual.col%26))}-${String(actual.row+1).padStart(2,'0')}`;
+    const coord=`${String.fromCharCode(65+(actual.col%26))}-${String(actual.row+1).padStart(2,'00')}`;
     const aLbl=attacker.side==='ally'?`A${attacker.id}`:`E${attacker.id-CONFIG.SQUAD_COUNT}`;
     chatUI.addLog(aLbl,null,`박격포 착탄 → ${coord} (AOE ${CONFIG.MORTAR_AOE}타일)`);
-
-    // ── [B] 박격포 궤적 이펙트 ──
-    if(this.bullet){
-      this.bullet.fire(attacker.pos, actual, 'mortar', true);
-    }
+    if(this.bullet) this.bullet.fire(attacker.pos,actual,'mortar',true);
 
     const depot=this.supply.getDepotAt(actual.col,actual.row);
     if(depot&&depot.alive){
       const res=this.supply.damageDepot(depot.id,1);
+      // [E] AAR 배급소 피해 기록
+      if(this.aar) this.aar.onDepotDamage();
       chatUI.addLog('SYSTEM',null,res.destroyed?`배급소#${depot.id} 파괴!`:`배급소#${depot.id} 피격 (HP:${depot.hp}/${depot.maxHp})`,'system');
       this.supply.updateDepotVisual(depot);
     }
@@ -769,13 +784,12 @@ class GameScene {
     for(const r of aoeResults){
       const tLbl=r.squad.side==='ally'?`A${r.squad.id}분대`:`E${r.squad.id-CONFIG.SQUAD_COUNT}분대`;
       if(r.hit){
+        if(this.aar){this.aar.onShot(attacker.side,attacker.id,true);this.aar.onCasualty(r.squad.side);}
         chatUI.addLog(aLbl,null,`폭발 — ${tLbl} 명중! (잔여:${r.squad.troops}명)`);
         if(r.squad.mat){let n=0;const flash=()=>{if(!r.squad.mat)return;r.squad.mat.opacity=n++%2===0?0.15:0.90;if(n<6)setTimeout(flash,90);else r.squad.mat.opacity=0.90;};flash();}
         if(!r.squad.alive){
-          // ── [C] 박격포 적 처치 무전기 드롭 ──
-          if(r.squad.side==='enemy' && this.radioIntercept){
-            this.radioIntercept.tryDrop(r.squad);
-          }
+          if(this.aar) this.aar.onSquadKilled(r.squad.side);
+          if(r.squad.side==='enemy'&&this.radioIntercept) this.radioIntercept.tryDrop(r.squad);
           setTimeout(()=>{if(r.squad.mesh)r.squad.mesh.visible=false;this._updateOverlapVisuals();},590);
           chatUI.addLog('SYSTEM',null,`${tLbl} 전멸`,'system');
         }
@@ -841,13 +855,6 @@ class GameScene {
     if(batEl&&this.comms){const b=this.comms.batteryLevel;batEl.textContent=b+'%';batEl.className='val'+(b<30?' crit':b<50?' warn':'');}
     const phEl=document.getElementById('phase-val');
     if(phEl) phEl.textContent=this.phase==='INPUT'?'명령 입력':this.phase==='EXECUTE'?'실행 중':'종료';
-    const dnChip=document.getElementById('daynight-val');
-    if(dnChip&&this.dayNight){
-      const p=this.dayNight.phase;
-      dnChip.textContent=p.label;
-      const colorMap={day:'var(--col-green)',dusk:'var(--col-amber)',night:'#4466cc',dawn:'#cc88ff'};
-      dnChip.style.color=colorMap[p.id]||'var(--col-green)';
-    }
     this._syncDepotChip();
     this._syncCaptureHUD();
   }
@@ -992,15 +999,12 @@ class GameScene {
     this._animations=this._animations.filter(a=>!done.includes(a));
   }
 
-  // ── [A][B] _tick — 카메라 트윈 + 총알 업데이트 추가 ──
   _tick(ts){
     requestAnimationFrame(this._tick.bind(this));
     const now=ts||0,delta=Math.min((now-(this._lastTime||now))/1000,0.1);
     this._lastTime=now;
     this._updateAnimations(delta);
-    // [B] 총알 이펙트 업데이트
     if(this.bullet) this.bullet.update(delta);
-    // [A] 카메라 트윈 업데이트
     if(this._camTweenFn) this._camTweenFn(delta);
     if(this._moveHighlights.length||this._attackHighlights.length){
       const blink=Math.sin(now*0.006)*0.5+0.5;
