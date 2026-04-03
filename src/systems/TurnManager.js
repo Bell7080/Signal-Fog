@@ -1,10 +1,14 @@
 /* ============================================================
-   TurnManager.js v0.5
+   TurnManager.js v0.5 + REPLAY
    ────────────────────────────────────────────────────────────
    v0.5 변경:
    · [E] AARSystem 연동: 턴 시작/통신 품질/배급소 피해/결과 표시
    · [F] daynight-val HUD 엘리먼트 연동 (누락 수정)
    · RadioInterceptSystem 연동 유지
+
+   REPLAY 추가:
+   · [REPLAY] _checkResult() 맨 앞에 captureSnapshot() 호출
+              → 매 턴 종료 시 전체 유닛 위치 스냅샷 저장
    ============================================================ */
 
 class TurnManager {
@@ -24,13 +28,13 @@ class TurnManager {
       if (prev.mat)  { prev.mat.emissive = new THREE.Color(0x000000); prev.mat.opacity = 0.90; }
       if (prev.mesh) { prev.mesh.scale.set(1, 1, 1); }
     }
-    this.scene.selectedSquad  = null;
-    this.scene.pendingCmds    = [];
+    this.scene.selectedSquad    = null;
+    this.scene.pendingCmds      = [];
     this.scene.commandedSquadId = null;
     this.scene.gridMap.clearHighlights();
     if (typeof this.scene._clearBlinkHighlights === 'function') this.scene._clearBlinkHighlights();
-    if (typeof this.scene._hideProceedBtn === 'function') this.scene._hideProceedBtn();
-    if (typeof this.scene._hideSquadPicker === 'function') this.scene._hideSquadPicker();
+    if (typeof this.scene._hideProceedBtn       === 'function') this.scene._hideProceedBtn();
+    if (typeof this.scene._hideSquadPicker      === 'function') this.scene._hideSquadPicker();
 
     document.getElementById('hud-turn').textContent  = String(this.turn).padStart(2, '0');
     document.getElementById('hud-phase').textContent = '입력';
@@ -42,8 +46,8 @@ class TurnManager {
     for (const s of this.scene.squads) {
       if (!s.alive) continue;
       let ap = CONFIG.SQUAD_AP_MAX;
-      if (s.suppressed) { ap = Math.max(1, ap - 1); }
-      if (s._apPenalty) { ap = Math.max(0, ap - s._apPenalty); }
+      if (s.suppressed)  { ap = Math.max(1, ap - 1); }
+      if (s._apPenalty)  { ap = Math.max(0, ap - s._apPenalty); }
       s.ap = ap;
     }
 
@@ -139,7 +143,10 @@ class TurnManager {
 
     // 보급 차량 tick
     if (this.scene.supplyVehicles && this.scene.supply) {
-      this.scene.supplyVehicles.tick(this.scene.supply, msg => chatUI.addLog('SYSTEM', null, msg, 'system'));
+      this.scene.supplyVehicles.tick(
+        this.scene.supply,
+        msg => chatUI.addLog('SYSTEM', null, msg, 'system')
+      );
     }
 
     // ── 무전기 도청 시스템 tick ──
@@ -161,10 +168,10 @@ class TurnManager {
     }
 
     this.scene.comms.drainBattery();
-    if (typeof this.scene._updateFog === 'function')            this.scene._updateFog();
-    if (typeof this.scene._updateOverlapVisuals === 'function') this.scene._updateOverlapVisuals();
+    if (typeof this.scene._updateFog            === 'function') this.scene._updateFog();
+    if (typeof this.scene._updateOverlapVisuals  === 'function') this.scene._updateOverlapVisuals();
     this.scene._syncPanel();
-    if (typeof this.scene._syncCaptureHUD === 'function')       this.scene._syncCaptureHUD();
+    if (typeof this.scene._syncCaptureHUD        === 'function') this.scene._syncCaptureHUD();
   }
 
   /* ── CONFIRM 진입점 ── */
@@ -220,18 +227,27 @@ class TurnManager {
         if (this.scene.survival) {
           const ok = this.scene.survival.autonomousRestore(squad, cmd.restType);
           if (ok) {
-            const lbl = squad.side === 'ally' ? `A${squad.id}` : `E${squad.id - CONFIG.SQUAD_COUNT}`;
-            chatUI.addLog(lbl, null, `자율 ${cmd.restType === 'eat' ? '식사' : '음수'} — 인벤토리 소모`, 'system');
+            const lbl = squad.side === 'ally'
+              ? `A${squad.id}`
+              : `E${squad.id - CONFIG.SQUAD_COUNT}`;
+            chatUI.addLog(lbl, null,
+              `자율 ${cmd.restType === 'eat' ? '식사' : '음수'} — 인벤토리 소모`, 'system');
           }
         }
         await this._wait(60);
+
       } else if (cmd.type === 'move') {
         await new Promise(resolve => this.scene.moveSquadTo(squad, cmd.targetPos, resolve));
         if (this.scene.survival) this.scene.survival.consumeMove(squad);
         await this._wait(80);
+
       } else if (cmd.type === 'attack') {
         const target = this.scene.squads.find(s => s.id === cmd.targetId);
-        if (target && target.alive) { this.scene.applyHit(squad, target); await this._wait(320); }
+        if (target && target.alive) {
+          this.scene.applyHit(squad, target);
+          await this._wait(320);
+        }
+
       } else if (cmd.type === 'mortar') {
         if (typeof this.scene.applyMortarFire === 'function') {
           this.scene.applyMortarFire(squad, cmd.targetPos);
@@ -239,6 +255,7 @@ class TurnManager {
         }
       }
     }
+
     if (typeof this.scene._updateOverlapVisuals === 'function') this.scene._updateOverlapVisuals();
     this.scene._syncPanel();
   }
@@ -247,13 +264,20 @@ class TurnManager {
   async _executeEnemy() {
     const allySquads  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
     const enemySquads = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
-    if (enemySquads.length === 0) { chatUI.addLog('SYSTEM', null, '적군 전멸 — 행동 없음', 'system'); return; }
+    if (enemySquads.length === 0) {
+      chatUI.addLog('SYSTEM', null, '적군 전멸 — 행동 없음', 'system');
+      return;
+    }
 
     const avgComms = allySquads.length > 0
-      ? Math.round(allySquads.reduce((sum, s) => sum + this.scene._quality(s), 0) / allySquads.length)
+      ? Math.round(
+          allySquads.reduce((sum, s) => sum + this.scene._quality(s), 0) / allySquads.length
+        )
       : 100;
 
-    const mapState = this.scene.enemyAI.serializeMap(this.scene.gridMap, allySquads, enemySquads, avgComms);
+    const mapState = this.scene.enemyAI.serializeMap(
+      this.scene.gridMap, allySquads, enemySquads, avgComms
+    );
 
     let actions = [];
     try {
@@ -275,50 +299,101 @@ class TurnManager {
     }
 
     for (const action of actions) {
-      const squad = this.scene.squads.find(s => s.side === 'enemy' && s.id === action.squadId && s.alive);
-      if (!squad) { console.warn(`[TurnManager] 적군 분대 ID ${action.squadId} 없음`); continue; }
+      const squad = this.scene.squads.find(
+        s => s.side === 'enemy' && s.id === action.squadId && s.alive
+      );
+      if (!squad) {
+        console.warn(`[TurnManager] 적군 분대 ID ${action.squadId} 없음`);
+        continue;
+      }
 
       if (action.action === 'move') {
-        const targetPos = { col: Math.round(action.targetCol), row: Math.round(action.targetRow) };
+        const targetPos = {
+          col: Math.round(action.targetCol),
+          row: Math.round(action.targetRow),
+        };
         if (!this.scene.gridMap.isInBounds(targetPos.col, targetPos.row)) continue;
         if (targetPos.col === squad.pos.col && targetPos.row === squad.pos.row) continue;
-        chatUI.addLog(`E${squad.id - CONFIG.SQUAD_COUNT}`, null,
-          `이동 → ${String.fromCharCode(65+(targetPos.col%26))}-${String(targetPos.row+1).padStart(3,'0')}`);
+        chatUI.addLog(
+          `E${squad.id - CONFIG.SQUAD_COUNT}`, null,
+          `이동 → ${String.fromCharCode(65 + (targetPos.col % 26))}-${String(targetPos.row + 1).padStart(3, '0')}`
+        );
         await new Promise(resolve => this.scene.moveSquadTo(squad, targetPos, resolve));
         await this._wait(100);
+
       } else if (action.action === 'attack') {
         const rawId    = action.targetId;
-        const targetId = typeof rawId === 'number' ? rawId : parseInt(String(rawId).replace(/\D/g, ''));
-        const target   = this.scene.squads.find(s => s.side === 'ally' && s.id === targetId && s.alive);
-        if (!target) { console.warn(`[TurnManager] 공격 대상 ID ${rawId} 없음`); continue; }
+        const targetId = typeof rawId === 'number'
+          ? rawId
+          : parseInt(String(rawId).replace(/\D/g, ''));
+        const target = this.scene.squads.find(
+          s => s.side === 'ally' && s.id === targetId && s.alive
+        );
+        if (!target) {
+          console.warn(`[TurnManager] 공격 대상 ID ${rawId} 없음`);
+          continue;
+        }
         chatUI.addLog(`E${squad.id - CONFIG.SQUAD_COUNT}`, null, `A${target.id}분대 사격`);
         this.scene.applyHit(squad, target);
         await this._wait(320);
       }
     }
+
     if (typeof this.scene._updateOverlapVisuals === 'function') this.scene._updateOverlapVisuals();
     this.scene._syncPanel();
   }
 
   /* ── 승패 판정 ── */
   _checkResult() {
+    // ── [REPLAY] 턴 스냅샷 캡처 ──
+    if (this.scene.aar) {
+      this.scene.aar._mapCols = CONFIG.GRID_COLS;
+      this.scene.aar._mapRows = CONFIG.GRID_ROWS;
+      this.scene.aar.captureSnapshot(
+        this.scene.squads,
+        this.turn,
+        this.scene.dayNight?.phase?.id
+      );
+    }
+
     const allyAll    = this.scene.squads.filter(s => s.side === 'ally');
     const enemyAll   = this.scene.squads.filter(s => s.side === 'enemy');
     const allyAlive  = allyAll.filter(s => s.alive);
     const enemyAlive = enemyAll.filter(s => s.alive);
 
     if (allyAlive.length === 0) {
-      this._showResult(false, { turns: this.turn, reason: '아군 전멸', allyAlive: 0, allyTotal: allyAll.length, enemyAlive: enemyAlive.length, enemyTotal: enemyAll.length });
+      this._showResult(false, {
+        turns:      this.turn,
+        reason:     '아군 전멸',
+        allyAlive:  0,
+        allyTotal:  allyAll.length,
+        enemyAlive: enemyAlive.length,
+        enemyTotal: enemyAll.length,
+      });
       return;
     }
     if (enemyAlive.length === 0) {
-      this._showResult(true, { turns: this.turn, reason: '적군 전멸', allyAlive: allyAlive.length, allyTotal: allyAll.length, enemyAlive: 0, enemyTotal: enemyAll.length });
+      this._showResult(true, {
+        turns:      this.turn,
+        reason:     '적군 전멸',
+        allyAlive:  allyAlive.length,
+        allyTotal:  allyAll.length,
+        enemyAlive: 0,
+        enemyTotal: enemyAll.length,
+      });
       return;
     }
     if (this.turn >= CONFIG.TURN_LIMIT) {
       const allyTroops  = allyAlive.reduce((a, s) => a + s.troops, 0);
       const enemyTroops = enemyAlive.reduce((a, s) => a + s.troops, 0);
-      this._showResult(allyTroops >= enemyTroops, { turns: this.turn, reason: `${CONFIG.TURN_LIMIT}턴 경과`, allyAlive: allyAlive.length, allyTotal: allyAll.length, enemyAlive: enemyAlive.length, enemyTotal: enemyAll.length });
+      this._showResult(allyTroops >= enemyTroops, {
+        turns:      this.turn,
+        reason:     `${CONFIG.TURN_LIMIT}턴 경과`,
+        allyAlive:  allyAlive.length,
+        allyTotal:  allyAll.length,
+        enemyAlive: enemyAlive.length,
+        enemyTotal: enemyAll.length,
+      });
       return;
     }
 
@@ -330,14 +405,26 @@ class TurnManager {
         const pct = objSys.getGaugePct();
         if (allyCount > 0 || enemyCount > 0) {
           const dir = delta > 0 ? `▲+${delta}` : delta < 0 ? `▼${delta}` : '교착';
-          chatUI.addLog('SYSTEM', null, `점령지 — 아군 ${allyCount}분대 / 적군 ${enemyCount}분대 | 게이지 ${pct}% (${dir})`, 'system');
+          chatUI.addLog(
+            'SYSTEM', null,
+            `점령지 — 아군 ${allyCount}분대 / 적군 ${enemyCount}분대 | 게이지 ${pct}% (${dir})`,
+            'system'
+          );
         }
         if (objSys.isWon()) {
-          this._showResult(true, { turns: this.turn, reason: '점령지 완전 점령', allyAlive: allyAlive.length, allyTotal: allyAll.length, enemyAlive: enemyAlive.length, enemyTotal: enemyAll.length });
+          this._showResult(true, {
+            turns:      this.turn,
+            reason:     '점령지 완전 점령',
+            allyAlive:  allyAlive.length,
+            allyTotal:  allyAll.length,
+            enemyAlive: enemyAlive.length,
+            enemyTotal: enemyAll.length,
+          });
           return;
         }
       }
     }
+
     this._nextTurn();
   }
 
@@ -347,12 +434,18 @@ class TurnManager {
     this.scene.phase = 'RESULT';
     document.getElementById('hud-phase').textContent = '종료';
     hud.setStatus(win ? '훈련 완료 — 승리' : '훈련 종료 — 패배');
-    chatUI.addLog('SYSTEM', null, win ? `훈련 완료 — 승리 (${data.reason})` : `훈련 종료 — 패배 (${data.reason})`, 'system');
+    chatUI.addLog(
+      'SYSTEM', null,
+      win
+        ? `훈련 완료 — 승리 (${data.reason})`
+        : `훈련 종료 — 패배 (${data.reason})`,
+      'system'
+    );
 
     const overlay = document.getElementById('result-overlay');
     if (!overlay) return;
 
-    // ── [E] AAR 통합 결과 화면 ──
+    // ── [E] AAR 통합 결과 화면 (리플레이 포함) ──
     if (this.scene.aar) {
       this.scene.aar.show({ win, ...data }, this.scene.squads);
     } else {
@@ -361,7 +454,7 @@ class TurnManager {
       const title = document.getElementById('result-title');
       title.textContent = win ? '승리' : '패배';
       title.className   = win ? '' : 'lose';
-      const enemyClass = data.enemyAlive > 0 ? ' red' : '';
+      const enemyClass  = data.enemyAlive > 0 ? ' red' : '';
       document.getElementById('result-body').innerHTML =
         `소요 턴<span class="rv">${data.turns} / ${CONFIG.TURN_LIMIT}</span><br>` +
         `아군 잔존<span class="rv">${data.allyAlive} / ${data.allyTotal}</span><br>` +
