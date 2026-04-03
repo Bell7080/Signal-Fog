@@ -105,8 +105,12 @@ class TurnManager {
       const sleepEvts = this.scene.survival.processSleep(allAlive);
       for (const { squad: s, event } of sleepEvts) {
         const lbl = s.side === 'ally' ? `A${s.id}분대` : `E${s.id - CONFIG.SQUAD_COUNT}분대`;
-        if (event === 'sleep') chatUI.addLog('SYSTEM', null, `${lbl} 정신력 저하 — 수면 돌입`, 'system');
+        if (event === 'sleep') chatUI.addLog('SYSTEM', null, `${lbl} 정신력 저하 — 수면 돌입 💤`, 'system');
         if (event === 'wake')  chatUI.addLog('SYSTEM', null, `${lbl} 수면 회복 — 행동 가능`, 'system');
+        /* 수면/기상 시각 효과 (회색 + Zzz) */
+        if (typeof this.scene._updateSquadSleepVisual === 'function') {
+          this.scene._updateSquadSleepVisual(s);
+        }
       }
       const starveEvts = this.scene.survival.processStarvation(allAlive);
       for (const { squad: s } of starveEvts) {
@@ -182,10 +186,10 @@ class TurnManager {
     if (typeof this.scene._hideSquadPicker === 'function') this.scene._hideSquadPicker();
 
     document.getElementById('hud-phase').textContent = '실행';
-    document.getElementById('phase-val').textContent = '실행 중';
-    hud.setStatus('실행 페이즈 — 아군 행동 중...');
+    document.getElementById('phase-val').textContent = '계획 중';
+    hud.setStatus('계획 단계 — 양측 행동 계획 수립 중...');
 
-    // AllyAI 자율 행동 주입
+    // ── AllyAI 자율 행동 주입 (현재 위치 기준) ──
     if (this.scene.allyAI) {
       const allyAlive  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
       const enemyAlive = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
@@ -201,15 +205,57 @@ class TurnManager {
       }
     }
 
+    // ── 적군 AI 결정 — 아군 이동 전 현재 위치 기준으로 계획 수립 ──
+    const enemyActions = await this._planEnemyActions();
+
+    // 도청 인터셉트 (계획 단계에서 표시)
+    if (this.scene.radioIntercept?.isIntercepting) {
+      const enemySquads = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
+      this.scene.radioIntercept.interceptActions(enemyActions, enemySquads);
+    }
+
+    document.getElementById('phase-val').textContent = '실행 중';
+    hud.setStatus('실행 페이즈 — 아군 행동 중...');
+
     await this._executeAlly();
-    await this._wait(400);
+    await this._wait(300);
 
     hud.setStatus('실행 페이즈 — 적군 행동 중...');
     chatUI.addLog('SYSTEM', null, '--- 적군 행동 ---', 'system');
-    await this._executeEnemy();
+    await this._executeEnemyActions(enemyActions);
     await this._wait(400);
 
     this._checkResult();
+  }
+
+  /* ── 적군 AI 계획 수립 (실행 전, 현재 위치 기준) ── */
+  async _planEnemyActions() {
+    const allySquads  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
+    const enemySquads = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
+    if (enemySquads.length === 0) return [];
+
+    const avgComms = allySquads.length > 0
+      ? Math.round(
+          allySquads.reduce((sum, s) => sum + this.scene._quality(s), 0) / allySquads.length
+        )
+      : 100;
+
+    const mapState = this.scene.enemyAI.serializeMap(
+      this.scene.gridMap, allySquads, enemySquads, avgComms
+    );
+
+    let actions = [];
+    try {
+      actions = await this.scene.enemyAI.decideTurn(mapState);
+    } catch (err) {
+      console.error('decideTurn 오류:', err);
+      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally, mapState);
+    }
+    if (!Array.isArray(actions)) {
+      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally, mapState);
+    }
+    console.log(`[TurnManager] 적군 계획 ${actions.length}개:`, actions);
+    return actions;
   }
 
   /* ── 아군 명령 순차 실행 ── */
@@ -260,43 +306,20 @@ class TurnManager {
     this.scene._syncPanel();
   }
 
-  /* ── 적군 행동 ── */
-  async _executeEnemy() {
-    const allySquads  = this.scene.squads.filter(s => s.side === 'ally'  && s.alive);
+  /* ── 적군 행동 실행 (사전 계획된 actions 배열을 받아 실행) ── */
+  async _executeEnemyActions(actions) {
     const enemySquads = this.scene.squads.filter(s => s.side === 'enemy' && s.alive);
     if (enemySquads.length === 0) {
       chatUI.addLog('SYSTEM', null, '적군 전멸 — 행동 없음', 'system');
       return;
     }
-
-    const avgComms = allySquads.length > 0
-      ? Math.round(
-          allySquads.reduce((sum, s) => sum + this.scene._quality(s), 0) / allySquads.length
-        )
-      : 100;
-
-    const mapState = this.scene.enemyAI.serializeMap(
-      this.scene.gridMap, allySquads, enemySquads, avgComms
-    );
-
-    let actions = [];
-    try {
-      actions = await this.scene.enemyAI.decideTurn(mapState);
-    } catch (err) {
-      console.error('decideTurn 오류:', err);
-      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally, mapState);
-    }
-    if (!Array.isArray(actions)) {
-      actions = this.scene.enemyAI.fallback.decide(mapState.enemy, mapState.ally, mapState);
+    if (!Array.isArray(actions) || actions.length === 0) {
+      chatUI.addLog('SYSTEM', null, '적군 행동 없음', 'system');
+      return;
     }
 
-    console.log(`[TurnManager] 적군 액션 ${actions.length}개:`, actions);
-    chatUI.addLog('SYSTEM', null, `적군 행동 ${actions.length}개 수신`, 'system');
-
-    // 도청 인터셉트
-    if (this.scene.radioIntercept?.isIntercepting) {
-      this.scene.radioIntercept.interceptActions(actions, enemySquads);
-    }
+    /* 무전기 도청 여부 — 도청 중일 때만 적군 이동 로그를 채팅에 표시 */
+    const isIntercepting = this.scene.radioIntercept?.isIntercepting ?? false;
 
     for (const action of actions) {
       const squad = this.scene.squads.find(
@@ -314,10 +337,13 @@ class TurnManager {
         };
         if (!this.scene.gridMap.isInBounds(targetPos.col, targetPos.row)) continue;
         if (targetPos.col === squad.pos.col && targetPos.row === squad.pos.row) continue;
-        chatUI.addLog(
-          `E${squad.id - CONFIG.SQUAD_COUNT}`, null,
-          `이동 → ${String.fromCharCode(65 + (targetPos.col % 26))}-${String(targetPos.row + 1).padStart(3, '0')}`
-        );
+        /* 도청 중일 때만 적 이동 방향을 채팅에 표시 */
+        if (isIntercepting) {
+          chatUI.addLog(
+            `E${squad.id - CONFIG.SQUAD_COUNT}`, null,
+            `이동 → ${String.fromCharCode(65 + (targetPos.col % 26))}-${String(targetPos.row + 1).padStart(3, '0')}`
+          );
+        }
         await new Promise(resolve => this.scene.moveSquadTo(squad, targetPos, resolve));
         await this._wait(100);
 
@@ -333,7 +359,10 @@ class TurnManager {
           console.warn(`[TurnManager] 공격 대상 ID ${rawId} 없음`);
           continue;
         }
-        chatUI.addLog(`E${squad.id - CONFIG.SQUAD_COUNT}`, null, `A${target.id}분대 사격`);
+        /* 공격 결과(명중/빗나감)는 applyHit 에서 표시됨. 여기선 도청 중일 때만 사전 예고 */
+        if (isIntercepting) {
+          chatUI.addLog(`E${squad.id - CONFIG.SQUAD_COUNT}`, null, `A${target.id}분대 사격`);
+        }
         this.scene.applyHit(squad, target);
         await this._wait(320);
       }

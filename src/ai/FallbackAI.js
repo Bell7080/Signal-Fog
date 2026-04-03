@@ -77,18 +77,35 @@ class FallbackAI {
     return actions;
   }
 
+  /* ── 분대 이동 칸수 계산 ──────────────────────────────────── */
+  _getMoveRange(squad) {
+    const isMG = squad.unitType === 'mg' || squad.unitType === 'machine_gun';
+    let base = squad.unitType === 'mortar'
+      ? (CONFIG.MORTAR_MOVE ?? 1)
+      : isMG ? (CONFIG.MG_MOVE ?? 2)
+             : (CONFIG.RIFLE_MOVE ?? 3);
+    if (squad.unitType === 'mortar' && squad.mortarState === 'ready') base = 0;
+    if (squad.supply) {
+      const T = CONFIG.SURVIVAL_MOVE_PENALTY_THRESHOLD ?? 30;
+      if ((squad.supply.water  ?? 100) < T) base--;
+      if ((squad.supply.ration ?? 100) < T) base--;
+    }
+    return Math.max(1, base);
+  }
+
   /* ── 역할별 행동 ─────────────────────────────────────────── */
   _actByRole(squad, allySquads, role, objective) {
+    const moveRange = this._getMoveRange(squad);
     switch (role) {
       case 'hold':
-        // 현위치 유지 (낮은 확률로 1칸 이동)
-        if (Math.random() < 0.15) return this._patrol(squad, squad.pos);
+        // 현위치 유지 (30% 확률로 이동 범위 내 순찰)
+        if (Math.random() < 0.30) return this._patrol(squad, squad.pos, moveRange);
         return null;
 
       case 'patrol': {
-        // 현위치 주변 소규모 순찰
+        // 이동 범위를 활용한 적극적 순찰
         const center = objective ? objective.center : squad.pos;
-        return this._patrol(squad, center);
+        return this._patrol(squad, center, moveRange);
       }
 
       case 'defend': {
@@ -97,8 +114,8 @@ class FallbackAI {
           row: Math.floor(CONFIG.GRID_ROWS / 2),
         };
         const dist = Math.abs(squad.pos.col - target.col) + Math.abs(squad.pos.row - target.row);
-        if (dist <= 3) return this._patrol(squad, target);
-        return this._moveToward(squad, target);
+        if (dist <= moveRange) return this._patrol(squad, target, moveRange);
+        return this._moveToward(squad, target, moveRange);
       }
 
       default:
@@ -106,31 +123,50 @@ class FallbackAI {
     }
   }
 
-  /* ── 유틸: 이동 ──────────────────────────────────────────── */
-  _moveToward(squad, targetPos) {
+  /* ── 유틸: 목표 방향으로 moveRange칸 이동 ────────────────── */
+  _moveToward(squad, targetPos, moveRange) {
     if (!targetPos) return null;
-    const dc = Math.sign(targetPos.col - squad.pos.col);
-    const dr = Math.sign(targetPos.row - squad.pos.row);
-    let col = squad.pos.col, row = squad.pos.row;
+    const steps = moveRange ?? this._getMoveRange(squad);
+    let col = squad.pos.col;
+    let row = squad.pos.row;
 
-    if (Math.random() < 0.6 && dr !== 0) row += dr;
-    else if (dc !== 0)                    col += dc;
-    else if (dr !== 0)                    row += dr;
-    else return null; // 이미 목표 위치
+    for (let i = 0; i < steps; i++) {
+      const remDc = targetPos.col - col;
+      const remDr = targetPos.row - row;
+      if (remDc === 0 && remDr === 0) break;
+      let nc = col, nr = row;
+      if (Math.random() < 0.55 && remDr !== 0) nr += Math.sign(remDr);
+      else if (remDc !== 0)                     nc += Math.sign(remDc);
+      else if (remDr !== 0)                     nr += Math.sign(remDr);
+      else break;
+      nc = Math.max(0, Math.min(CONFIG.GRID_COLS - 1, nc));
+      nr = Math.max(0, Math.min(CONFIG.GRID_ROWS - 1, nr));
+      col = nc; row = nr;
+    }
 
-    return { squadId: squad.id, action: 'move',
-      targetCol: Math.max(0, Math.min(CONFIG.GRID_COLS - 1, col)),
-      targetRow: Math.max(0, Math.min(CONFIG.GRID_ROWS - 1, row)) };
+    if (col === squad.pos.col && row === squad.pos.row) return null;
+    return { squadId: squad.id, action: 'move', targetCol: col, targetRow: row };
   }
 
-  _patrol(squad, center) {
+  _patrol(squad, center, moveRange) {
+    const steps = moveRange ?? this._getMoveRange(squad);
+    /* 8방향 중 랜덤 선택 후 steps칸 진행, center에서 너무 멀어지면 복귀 */
     const dirs = [[0,1],[1,0],[0,-1],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1]];
-    const [dc, dr] = dirs[Math.floor(Math.random() * dirs.length)];
-    const col = Math.max(0, Math.min(CONFIG.GRID_COLS - 1, squad.pos.col + dc));
-    const row = Math.max(0, Math.min(CONFIG.GRID_ROWS - 1, squad.pos.row + dr));
-    const dist = Math.abs(col - center.col) + Math.abs(row - center.row);
-    if (dist > 5) return this._moveToward(squad, center);
-    return { squadId: squad.id, action: 'move', targetCol: col, targetRow: row };
+    const shuffled = [...dirs].sort(() => Math.random() - 0.5);
+    for (const [dc, dr] of shuffled) {
+      let col = squad.pos.col, row = squad.pos.row;
+      for (let i = 0; i < steps; i++) {
+        const nc = col + dc, nr = row + dr;
+        if (nc < 0 || nc >= CONFIG.GRID_COLS || nr < 0 || nr >= CONFIG.GRID_ROWS) break;
+        col = nc; row = nr;
+      }
+      const distToCenter = Math.abs(col - center.col) + Math.abs(row - center.row);
+      if (distToCenter > 6) return this._moveToward(squad, center, steps);
+      if (col !== squad.pos.col || row !== squad.pos.row) {
+        return { squadId: squad.id, action: 'move', targetCol: col, targetRow: row };
+      }
+    }
+    return this._moveToward(squad, center, steps);
   }
 
   _nearestAllyPos(squad, allySquads) {

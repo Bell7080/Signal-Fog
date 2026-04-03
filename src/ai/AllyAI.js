@@ -32,9 +32,27 @@ class AllyAI {
     return cmds;
   }
 
+  /* ── 분대 이동 칸수 계산 ──────────────────────────────────── */
+  _getMoveRange(squad) {
+    const isMG = squad.unitType === 'mg' || squad.unitType === 'machine_gun';
+    let base = squad.unitType === 'mortar'
+      ? (CONFIG.MORTAR_MOVE ?? 1)
+      : isMG ? (CONFIG.MG_MOVE ?? 2)
+             : (CONFIG.RIFLE_MOVE ?? 3);
+    if (squad.unitType === 'mortar' && squad.mortarState === 'ready') base = 0;
+    if (squad.supply) {
+      const T = CONFIG.SURVIVAL_MOVE_PENALTY_THRESHOLD ?? 30;
+      if ((squad.supply.water  ?? 100) < T) base--;
+      if ((squad.supply.ration ?? 100) < T) base--;
+      if ((squad.supply.morale ?? 100) < T) base--;
+    }
+    return Math.max(0, base);
+  }
+
   /* ── 단일 분대 행동 결정 ─────────────────────────────────── */
   _decideSingle(squad, allies, enemies, obj) {
-    const sup = squad.supply;
+    const sup      = squad.supply;
+    const moveRange = this._getMoveRange(squad);
 
     // ── 1. 자급자족: 자원 임계치 이하면 인벤토리 소모(1턴) ──
     if (sup) {
@@ -47,59 +65,78 @@ class AllyAI {
       }
     }
 
+    if (moveRange <= 0) return null; // 이동 불가
+
     // ── 2. 점령지 발견 시: 점령지 타일에 있지 않다면 이동 고려 ──
     if (obj && obj.discovered && !obj.isOnObjective(squad.pos.col, squad.pos.row)) {
       const aliveAllies  = allies.filter(s => s.alive);
       const onObj        = aliveAllies.filter(s => obj.isOnObjective(s.pos.col, s.pos.row));
       const targetCount  = Math.ceil(aliveAllies.length * 0.45);
 
-      if (onObj.length < targetCount && Math.random() < 0.45) {
-        const step = this._stepToward(squad.pos, obj.center, enemies);
+      if (onObj.length < targetCount && Math.random() < 0.55) {
+        const step = this._stepToward(squad.pos, obj.center, enemies, moveRange);
         if (step) return { type: 'move', squadId: squad.id, targetPos: step };
       }
     }
 
-    // ── 3. 소극적 방어: 낮은 확률로 1칸 순찰 ──
-    if (Math.random() < 0.12) {
-      const patrol = this._patrolStep(squad, enemies);
+    // ── 3. 방어 순찰: 이동 범위 내에서 적 회피하며 이동 ──
+    if (Math.random() < 0.25) {
+      const patrol = this._patrolStep(squad, enemies, moveRange);
       if (patrol) return { type: 'move', squadId: squad.id, targetPos: patrol };
     }
 
     return null; // 대기
   }
 
-  /* ── 목표 방향으로 1칸 이동 ──────────────────────────────── */
-  _stepToward(from, to, enemies) {
+  /* ── 목표 방향으로 moveRange칸 이동 ─────────────────────── */
+  _stepToward(from, to, enemies, moveRange) {
     const dc = to.col - from.col;
     const dr = to.row - from.row;
     if (dc === 0 && dr === 0) return null;
 
-    const candidates = [];
-    if (dc !== 0) candidates.push({ col: from.col + Math.sign(dc), row: from.row });
-    if (dr !== 0) candidates.push({ col: from.col, row: from.row + Math.sign(dr) });
-    if (Math.random() < 0.5) candidates.reverse(); // 확률적 방향 선택
+    const dist  = Math.abs(dc) + Math.abs(dr);
+    const steps = Math.min(moveRange, dist);
 
-    for (const pos of candidates) {
-      if (this._isSafeMove(pos, enemies)) return pos;
+    /* 단계적으로 이동 경로 계산 */
+    let col = from.col;
+    let row = from.row;
+    for (let i = 0; i < steps; i++) {
+      const remDc = to.col - col;
+      const remDr = to.row - row;
+      if (remDc === 0 && remDr === 0) break;
+      let nc = col, nr = row;
+      if (Math.abs(remDc) >= Math.abs(remDr)) nc += Math.sign(remDc);
+      else                                     nr += Math.sign(remDr);
+      nc = Math.max(0, Math.min(CONFIG.GRID_COLS - 1, nc));
+      nr = Math.max(0, Math.min(CONFIG.GRID_ROWS - 1, nr));
+      if (!this._isSafeMove({ col: nc, row: nr }, enemies)) break;
+      col = nc; row = nr;
     }
-    return null;
+    if (col === from.col && row === from.row) return null;
+    return { col, row };
   }
 
-  /* ── 인접 타일 순찰 이동 ─────────────────────────────────── */
-  _patrolStep(squad, enemies) {
-    const dirs = [
-      { col: squad.pos.col + 1, row: squad.pos.row },
-      { col: squad.pos.col - 1, row: squad.pos.row },
-      { col: squad.pos.col,     row: squad.pos.row + 1 },
-      { col: squad.pos.col,     row: squad.pos.row - 1 },
-    ];
-    const valid = dirs.filter(p =>
-      p.col >= 0 && p.col < CONFIG.GRID_COLS &&
-      p.row >= 0 && p.row < CONFIG.GRID_ROWS &&
-      this._isSafeMove(p, enemies)
-    );
-    if (!valid.length) return null;
-    return valid[Math.floor(Math.random() * valid.length)];
+  /* ── 순찰 이동 (이동 범위 내에서 적 회피) ─────────────────── */
+  _patrolStep(squad, enemies, moveRange) {
+    /* 이동 가능 방향 4방향 중 랜덤 선택 후 moveRange 칸 진행 */
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    const shuffled = dirs.sort(() => Math.random() - 0.5);
+    for (const [dc, dr] of shuffled) {
+      let col = squad.pos.col;
+      let row = squad.pos.row;
+      let valid = true;
+      for (let i = 0; i < moveRange; i++) {
+        const nc = col + dc;
+        const nr = row + dr;
+        if (nc < 0 || nc >= CONFIG.GRID_COLS || nr < 0 || nr >= CONFIG.GRID_ROWS) { valid = false; break; }
+        if (!this._isSafeMove({ col: nc, row: nr }, enemies)) break;
+        col = nc; row = nr;
+      }
+      if (valid && (col !== squad.pos.col || row !== squad.pos.row)) {
+        return { col, row };
+      }
+    }
+    return null;
   }
 
   /* ── 이동 가능 여부 (적군 위치 회피) ─────────────────────── */

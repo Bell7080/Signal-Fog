@@ -728,6 +728,10 @@ class AARSystem {
     };
     const startPlay = () => {
       isPlaying = true;
+      /* 항상 처음(0번 스냅샷)부터 재생 */
+      currentIdx = 0;
+      if (slider) slider.value = 0;
+      render(0);
       if (playBtn) playBtn.textContent = '⏸ PAUSE';
       playTimer = setInterval(() => {
         currentIdx++;

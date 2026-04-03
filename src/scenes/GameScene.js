@@ -128,10 +128,48 @@ class GameScene {
 
   _focusOnSquad(squad) {
     if (!squad || !this.controls) return;
-    const gm = this.gridMap;
-    const wx = squad.pos.col * gm.TILE_W + gm.OFFSET_X;
-    const wz = squad.pos.row * gm.TILE_W + gm.OFFSET_Z;
-    this._animateCamera(wx, 0, wz);
+    const gm  = this.gridMap;
+    const TW  = gm.TILE_W;
+    const wx  = squad.pos.col * TW + gm.OFFSET_X;
+    const wz  = squad.pos.row * TW + gm.OFFSET_Z;
+    const ty  = gm.tiles?.[squad.pos.row]?.[squad.pos.col]?.height ?? 0;
+
+    /* 배틀그라운드 3인칭 시점:
+       · target = 분대 위치 (지면)
+       · camera = 분대 등 뒤(+Z 방향, 아군 스폰쪽) + 위쪽
+       · 거리는 타일 크기 기준으로 고정 비율 유지              */
+    const behindDist = TW * 4.5;   // 분대 등 뒤 거리
+    const upDist     = TW * 3.2;   // 높이
+
+    const endTarget = new THREE.Vector3(wx, ty, wz);
+    const endCamPos = new THREE.Vector3(wx, ty + upDist, wz + behindDist);
+    this._animateCameraFull(endTarget, endCamPos);
+  }
+
+  /* 카메라 target + position 동시 트윈 (PUBG 3인칭용) */
+  _animateCameraFull(endTarget, endCamPos) {
+    if (!this.controls) return;
+    if (this._camTweenCancel) this._camTweenCancel();
+
+    const startTarget = this.controls.target.clone();
+    const startCamPos = this.camera.position.clone();
+
+    let cancelled = false;
+    this._camTweenCancel = () => { cancelled = true; };
+    const duration = 0.55;
+    let elapsed = 0;
+    const ease = t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+
+    this._camTweenFn = (delta) => {
+      if (cancelled) { this._camTweenFn = null; return; }
+      elapsed += delta;
+      const t = Math.min(elapsed / duration, 1);
+      const e = ease(t);
+      this.controls.target.lerpVectors(startTarget, endTarget, e);
+      this.camera.position.lerpVectors(startCamPos, endCamPos, e);
+      this.controls.update();
+      if (t >= 1) { this._camTweenFn = null; this._camTweenCancel = null; }
+    };
   }
 
   _animateCamera(tx, ty, tz) {
@@ -914,10 +952,48 @@ class GameScene {
       const row=String(d.row+1).padStart(2,'0');
       const wPct=d.maxWater>0?Math.round(d.water/d.maxWater*100):0;
       const rPct=d.maxRation>0?Math.round(d.ration/d.maxRation*100):0;
-      const cls=!d.alive?'depot-line dead':wPct<30||rPct<30?'depot-line warn':'depot-line';
+      /* 역할에 맞는 스탯만 표시: 식량 창고=식량, 급수소=물 */
+      let statStr;
+      if(d.type==='food')       statStr=`식:${rPct}%`;
+      else if(d.type==='water') statStr=`물:${wPct}%`;
+      else                      statStr=`물:${wPct}% 식:${rPct}%`;
+      const low=d.type==='food'?rPct<30:d.type==='water'?wPct<30:(wPct<30||rPct<30);
+      const cls=!d.alive?'depot-line dead':low?'depot-line warn':'depot-line';
       const hp=d.alive?`HP${d.hp}/${d.maxHp}`:'파괴';
-      return `<div class="${cls}">#${d.id}(${col}-${row}) 물:${wPct}% 식:${rPct}% ${hp}</div>`;
+      return `<div class="${cls}">#${d.id}(${col}-${row}) ${statStr} ${hp}</div>`;
     }).join('');
+  }
+
+  /* ── 수면 시각 효과: 회색 메시 + Zzz 스프라이트 ── */
+  _updateSquadSleepVisual(squad){
+    if(!squad.mesh||!squad.mat) return;
+    const TW=this.gridMap.TILE_W;
+    if(squad.sleeping){
+      /* 회색으로 변경 */
+      squad.mat.color.setHex(0x888888);
+      squad.mat.emissive.setHex(0x333333);
+      /* Zzz 스프라이트 추가 */
+      if(!squad._zzzSprite){
+        const spr=_makeTextSprite('Zzz','#aaaaaa');
+        spr.position.set(0,TW*2.1,0);
+        spr.scale.set(TW*1.3,TW*0.65,1);
+        spr.raycast=()=>{};
+        squad.mesh.add(spr);
+        squad._zzzSprite=spr;
+      }
+    } else {
+      /* 원래 색상 복원 */
+      const cd=squad._colDef||this._squadColor(squad);
+      squad.mat.color.setHex(cd.hex);
+      squad.mat.emissive.setHex(0);
+      /* Zzz 스프라이트 제거 */
+      if(squad._zzzSprite){
+        squad.mesh.remove(squad._zzzSprite);
+        if(squad._zzzSprite.material?.map) squad._zzzSprite.material.map.dispose();
+        if(squad._zzzSprite.material) squad._zzzSprite.material.dispose();
+        squad._zzzSprite=null;
+      }
+    }
   }
 
   _quality(squad){return this.comms?Math.round(this.comms.calcQuality({terrain:squad.terrain})):100;}
@@ -965,9 +1041,35 @@ class GameScene {
     const depot=this.supply?.getDepotAt(col,row);
     if(depot&&depot.side==='ally'){this._showDepotPanel(depot,e.clientX,e.clientY);return;}
     if(!this.selectedSquad) return;
+
+    /* 박격포 거치 완료 상태: 시야 밖 타일도 클릭해서 사격 가능 */
+    if(this.selectedSquad.unitType==='mortar'&&this.selectedSquad.mortarState==='ready'){
+      const dist=Math.abs(col-this.selectedSquad.pos.col)+Math.abs(row-this.selectedSquad.pos.row);
+      if(dist>0&&dist<=CONFIG.MORTAR_RANGE){
+        this._issueMortarAtPos(this.selectedSquad,{col,row});
+        return;
+      }
+    }
+
     const enemy=this.squads.find(q=>q.side==='enemy'&&q.alive&&q.pos.col===col&&q.pos.row===row);
     if(enemy){this._issueAttack(this.selectedSquad,enemy);return;}
     this._issueMove(this.selectedSquad,{col,row});
+  }
+
+  /* ── 박격포: 좌표 직접 지정 사격 (시야 밖 포함) ── */
+  _issueMortarAtPos(squad,targetPos){
+    if(squad.mortarCooldown>0){chatUI.addLog('SYSTEM',null,`박격포 재장전 중(${squad.mortarCooldown}턴 남음)`,'system');return;}
+    if(squad.ap<1){chatUI.addLog('SYSTEM',null,'AP 부족 — 사격 불가','system');return;}
+    this._cancelCmd(squad);
+    this.pendingCmds.push({type:'mortar',squadId:squad.id,targetPos});
+    squad.ap-=1; squad.mortarCooldown=CONFIG.MORTAR_COOLDOWN;
+    this.commandedSquadId=squad.id;
+    if(this.survival) this.survival.consumeAttack(squad);
+    this._clearBlinkHighlights(); this.gridMap.clearHighlights();
+    this.gridMap.highlightTile(targetPos.col,targetPos.row,0xcc80ff,0.55);
+    const coord=`${String.fromCharCode(65+(targetPos.col%26))}-${String(targetPos.row+1).padStart(2,'0')}`;
+    chatUI.addLog(`A${squad.id}`,null,`박격포 사격 → ${coord} (간접사격)`);
+    this._clearSelection(); this._showProceedBtn('박격포 확정');
   }
 
   _raycastToGrid(e){
