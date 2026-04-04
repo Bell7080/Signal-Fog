@@ -51,7 +51,7 @@ class AllyAI {
 
   /* ── 단일 분대 행동 결정 ─────────────────────────────────── */
   _decideSingle(squad, allies, enemies, obj) {
-    const sup      = squad.supply;
+    const sup       = squad.supply;
     const moveRange = this._getMoveRange(squad);
 
     // ── 1. 자급자족: 자원 임계치 이하면 인벤토리 소모(1턴) ──
@@ -67,25 +67,34 @@ class AllyAI {
 
     if (moveRange <= 0) return null; // 이동 불가
 
-    // ── 2. 점령지 발견 시: 점령지 타일에 있지 않다면 이동 고려 ──
+    // ── 2. 점령지 발견 시: 목표 수에 부족하면 매 턴 이동 ──
     if (obj && obj.discovered && !obj.isOnObjective(squad.pos.col, squad.pos.row)) {
-      const aliveAllies  = allies.filter(s => s.alive);
-      const onObj        = aliveAllies.filter(s => obj.isOnObjective(s.pos.col, s.pos.row));
-      const targetCount  = Math.ceil(aliveAllies.length * 0.45);
-
-      if (onObj.length < targetCount && Math.random() < 0.55) {
+      const aliveAllies = allies.filter(s => s.alive);
+      const onObj       = aliveAllies.filter(s => obj.isOnObjective(s.pos.col, s.pos.row));
+      const targetCount = Math.ceil(aliveAllies.length * 0.55);
+      if (onObj.length < targetCount) {
         const step = this._stepToward(squad.pos, obj.center, enemies, moveRange);
         if (step) return { type: 'move', squadId: squad.id, targetPos: step };
       }
     }
 
-    // ── 3. 방어 순찰: 이동 범위 내에서 적 회피하며 이동 ──
-    if (Math.random() < 0.25) {
+    // ── 3. 매 턴 이동: 점령지 미발견이면 맵 중앙(점령지 방향) 으로 전진 ──
+    //       점령지 발견 후에도 잉여 분대는 중앙 근처에서 순찰
+    const mapCenter = { col: Math.floor(CONFIG.GRID_COLS / 2), row: Math.floor(CONFIG.GRID_ROWS / 2) };
+    const baseTarget = (obj && obj.discovered) ? obj.center : mapCenter;
+    const distToBase = Math.abs(squad.pos.col - baseTarget.col) + Math.abs(squad.pos.row - baseTarget.row);
+
+    if (distToBase > moveRange) {
+      // 목표까지 아직 멀다 → 전진
+      const step = this._stepToward(squad.pos, baseTarget, enemies, moveRange);
+      if (step) return { type: 'move', squadId: squad.id, targetPos: step };
+    } else {
+      // 목표 근처 → 주변 순찰 (항상 실행)
       const patrol = this._patrolStep(squad, enemies, moveRange);
       if (patrol) return { type: 'move', squadId: squad.id, targetPos: patrol };
     }
 
-    return null; // 대기
+    return null;
   }
 
   /* ── 목표 방향으로 moveRange칸 이동 ─────────────────────── */

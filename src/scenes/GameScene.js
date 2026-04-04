@@ -138,8 +138,8 @@ class GameScene {
        · target = 분대 위치 (지면)
        · camera = 분대 등 뒤(+Z 방향, 아군 스폰쪽) + 위쪽
        · 거리는 타일 크기 기준으로 고정 비율 유지              */
-    const behindDist = TW * 4.5;   // 분대 등 뒤 거리
-    const upDist     = TW * 3.2;   // 높이
+    const behindDist = TW * 8.0;   // 분대 등 뒤 거리
+    const upDist     = TW * 5.5;   // 높이
 
     const endTarget = new THREE.Vector3(wx, ty, wz);
     const endCamPos = new THREE.Vector3(wx, ty + upDist, wz + behindDist);
